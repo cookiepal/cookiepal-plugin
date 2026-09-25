@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Validate plugin and marketplace manifests
+        run: pnpm validate
+      - name: Test
+        run: pnpm test
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The gitleaks GitHub Action needs a paid licence for organisation repos, so run the release binary directly.
+      - name: Install gitleaks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: 8.30.1
+        run: |
+          gh release download "v$VERSION" -R gitleaks/gitleaks \
+            -p "gitleaks_${VERSION}_linux_x64.tar.gz" -p "gitleaks_${VERSION}_checksums.txt" -D "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP"
+          grep "linux_x64" "gitleaks_${VERSION}_checksums.txt" | sha256sum -c
+          tar -xzf "gitleaks_${VERSION}_linux_x64.tar.gz" gitleaks
+      - name: Scan full history for secrets
+        run: '"$RUNNER_TEMP/gitleaks" git . --redact --verbose'

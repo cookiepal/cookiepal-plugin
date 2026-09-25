@@ -1,0 +1,13 @@
+{
+  "name": "cookiepal",
+  "version": "0.1.0",
+  "description": "Check any page for cookies and trackers that fire before consent, from Claude Code. No account needed.",
+  "author": {
+    "name": "CookiePal",
+    "url": "https://cookiepal.io"
+  },
+  "homepage": "https://cookiepal.io",
+  "repository": "https://github.com/westpoint-io/claude-code-plugin",
+  "license": "MIT",
+  "keywords": ["cookies", "consent", "gdpr", "ccpa", "lgpd", "privacy", "cookie-banner"]
+}
