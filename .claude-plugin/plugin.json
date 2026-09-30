@@ -1,6 +1,6 @@
 {
   "name": "cookiepal",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Check any page for cookies and trackers that fire before consent, from Claude Code. No account needed.",
   "author": {
     "name": "CookiePal",
