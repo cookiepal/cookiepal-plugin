@@ -26,7 +26,9 @@ Restart Claude Code after installing. Run `/mcp` and you should see the `cookiep
 /cookiepal:check https://example.com
 ```
 
-The check loads one page in a fresh, temporary browser profile on your machine and reports what was set before you gave consent. It is an advisory check of a single page, labelled with the country it ran from. It is not a full site scan and it does not change anything in a CookiePal account. It works on any page your machine can reach, including `localhost`.
+The check loads one page in a fresh, temporary browser profile on your machine and reports what was set before you gave consent. It then loads the page twice more, presses the banner's accept button in one run and its reject button in the other, and reports what each one changed — including anything still set or still being contacted after an explicit reject. It is an advisory check of a single page, labelled with the country it ran from. It is not a full site scan and it does not change anything in a CookiePal account. It works on any page your machine can reach, including `localhost`.
+
+The only thing it ever clicks is one consent button. It never presses a button it is unsure of: where no banner is found, or more than one button matches, the check reports what was set on arrival and says the consent action was not tested. The matchers that find those buttons come from CookiePal with each check, so they improve without you updating the plugin.
 
 You need [Node.js](https://nodejs.org) 18 or later and Google Chrome, Microsoft Edge, Brave or Chromium. The check never uses your own browser profile, so your cookies and sign-ins are never read. To use a browser installed somewhere unusual, set `COOKIEPAL_BROWSER` to its executable.
 
