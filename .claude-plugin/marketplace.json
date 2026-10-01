@@ -11,7 +11,7 @@
     {
       "name": "cookiepal",
       "source": "./",
-      "description": "Check any page for cookies and trackers that fire before consent, from Claude Code. No account needed.",
+      "description": "Check any page for cookies and trackers that fire before consent, and for what its banner's accept and reject buttons actually do, from Claude Code. No account needed.",
       "homepage": "https://cookiepal.io"
     }
   ]
