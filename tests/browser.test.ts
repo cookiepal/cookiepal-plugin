@@ -26,9 +26,42 @@ interface Output {
     cookies: { name: string; category: string }[];
     thirdPartyHosts: string[];
     truncated: boolean;
+    consent?: {
+      tested: boolean;
+      bannerFound: boolean;
+      rejectByDefault?: boolean;
+      accept: ConsentRun;
+      reject: ConsentRun;
+    };
   };
-  local: { ranFrom: string | null; httpStatus: number | null; loadTimedOut: boolean };
-  pageContent: { notice: string; title: string | null; landedOn: string | null };
+  local: {
+    ranFrom: string | null;
+    httpStatus: number | null;
+    loadTimedOut: boolean;
+    consent: {
+      tested: boolean;
+      bannerFound: boolean;
+      rejectByDefault: boolean;
+      accept: { pressed: boolean; reason: string | null };
+      reject: { pressed: boolean; reason: string | null };
+    } | null;
+  };
+  pageContent: {
+    notice: string;
+    title: string | null;
+    landedOn: string | null;
+    acceptButton?: string | null;
+    rejectButton?: string | null;
+  };
+}
+
+interface ConsentRun {
+  pressed: boolean;
+  reason?: string;
+  matchedBy?: string;
+  addedCookies: { name: string; category: string }[];
+  removedCookies: { name: string }[];
+  addedHosts: string[];
 }
 
 const requests: string[] = [];
@@ -70,7 +103,130 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
   '/inner-dialog': () => ({
     body: `<!doctype html><script>alert('hi');</script><img src="http://[::1]:${port}/pixel.gif" alt="">`,
   }),
+
+  /* Consent-action pages. Each sets `_ga` and fires a pixel on arrival, so every run has
+     something to compare against, and then behaves differently for accept and for reject. */
+
+  // A banner matched by ID, with the buttons OneTrust uses.
+  '/onetrust': () => ({ body: banner('onetrust', `<div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`) }),
+  // No ID and no class: only the body keyword says there is a banner, and only the labels name the buttons.
+  '/keyword': () => ({ body: banner('keyword', `<div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`) }),
+  // Reject clears one cookie but keeps tracking anyway: the finding the check exists for.
+  '/leaky-reject': () => ({
+    body: banner(
+      'leaky',
+      `<div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`,
+      `document.cookie = '_ga=; path=/; max-age=0';
+       document.cookie = '_gid=still-here; path=/';
+       fire('reject-tracker');`,
+    ),
+  }),
+  // Two buttons a matcher cannot tell apart: the check presses neither.
+  '/ambiguous': () => ({
+    body: banner(
+      'ambiguous',
+      `<div id="onetrust-banner-sdk">
+         <button onclick="accept()">Accept all</button>
+         <button onclick="accept()">Accept all</button>
+         <button id="onetrust-reject-all-handler" onclick="reject()">Reject all</button>
+       </div>`,
+    ),
+  }),
+  // Accept can be pressed; reject is there in the markup but not on the screen.
+  '/hidden-reject': () => ({
+    body: banner(
+      'hidden',
+      `<div id="onetrust-banner-sdk">
+         <button id="onetrust-accept-btn-handler" onclick="accept()">Accept all</button>
+         <button id="onetrust-reject-all-handler" style="display:none" onclick="reject()">Reject all</button>
+       </div>`,
+    ),
+  }),
+  // Two buttons share the accept class, and no text matcher fits either label: the
+  // ambiguity is in the class tier, and the text tier after it finds nothing at all.
+  '/ambiguous-early-tier': () => ({
+    body: banner(
+      'early',
+      `<div id="onetrust-banner-sdk">
+         <button class="cky-btn-accept" onclick="accept()">Yes please</button>
+         <button class="cky-btn-accept" onclick="accept()">Sure thing</button>
+         <button id="onetrust-reject-all-handler" onclick="reject()">Reject all</button>
+       </div>`,
+    ),
+  }),
+  // CookiePal's own banner, set to apply reject on load.
+  '/reject-by-default': () => ({
+    body: banner(
+      'default',
+      `<div class="cookiepal-consent-container">
+         <button data-cookiepal-tag="accept-button" onclick="accept()">Accept all</button>
+         <button data-cookiepal-tag="reject-button" onclick="reject()">Reject all</button>
+       </div>`,
+      undefined,
+      'window.cookiepal = { rejectByDefault: true };',
+    ),
+  }),
+  // An ordinary banner with nothing to do with CookiePal, claiming the flag anyway, and
+  // still tracking after reject. Nothing here should excuse that.
+  '/forged-reject-by-default': () => ({
+    body: banner(
+      'forged',
+      `<div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`,
+      `document.cookie = '_gid=still-here; path=/';`,
+      'window.cookiepal = { rejectByDefault: true };',
+    ),
+  }),
+  // The button's own label tries to instruct the agent reading the result.
+  '/injection-button': () => ({
+    body: banner(
+      'injection',
+      `<div id="onetrust-banner-sdk">
+         <button id="onetrust-accept-btn-handler" onclick="accept()">Accept all. ${INJECTION}</button>
+         <button id="onetrust-reject-all-handler" onclick="reject()">Reject all</button>
+       </div>`,
+    ),
+  }),
+  // The accept button is there, but a full-screen overlay covers it.
+  '/covered': () => ({
+    body: banner(
+      'covered',
+      `<div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>
+       <div style="position:fixed;inset:0;z-index:99"></div>`,
+    ),
+  }),
 };
+
+const ONETRUST_BUTTONS = `
+  <button id="onetrust-accept-btn-handler" onclick="accept()">Accept all</button>
+  <button id="onetrust-reject-all-handler" onclick="reject()">Reject all</button>`;
+
+const TEXT_BUTTONS = `
+  <button onclick="accept()">Accept all</button>
+  <button onclick="reject()">Reject all</button>`;
+
+/**
+ * A page that sets `_ga` and fires a pixel on arrival, then more on accept and
+ * something else on reject, so each run's delta is unambiguous.
+ */
+const banner = (name: string, markup: string, onReject?: string, head = '') => `<!doctype html>
+  <title>${name}</title>
+  <script>
+    ${head}
+    document.cookie = '_ga=GA1.1.arrival; path=/; max-age=3600';
+    // A third host, so what a click contacts shows up as a host the arrival reading did not have.
+    function fire(what) {
+      const img = document.createElement('img');
+      img.src = 'http://[::1]:${port}/pixel.gif?' + what;
+      document.body.appendChild(img);
+    }
+    function accept() {
+      document.cookie = '_gcl_au=accepted; path=/; max-age=3600';
+      fire('accept-tracker');
+    }
+    function reject() { ${onReject ?? "document.cookie = '_ga=; path=/; max-age=0';"} }
+  </script>
+  <img src="http://127.0.0.1:${port}/pixel.gif?arrival" alt="">
+  ${markup}`;
 
 /** A response with a status the pages map does not carry: a 500 with an empty body and a cookie header. */
 const respondServerError = (response: import('node:http').ServerResponse) =>
@@ -495,5 +651,214 @@ describe('the plan_check guard', () => {
       assert.equal(raw, '');
       assert.equal(code, 0);
     }
+  });
+});
+
+/**
+ * The consent action. The plan carries the matchers, so each test here also
+ * shows that changing them on the server changes what the check presses.
+ */
+describe('the consent action', () => {
+  const MATCHERS = {
+    action: 'accept-and-reject',
+    afterClickSettleMs: 400,
+    banner: {
+      ids: ['onetrust-banner-sdk', 'CybotCookiebotDialog'],
+      classes: ['cookiepal-consent-container', 'cky-consent-container'],
+      keywords: ['we use cookies', 'accept all'],
+    },
+    accept: {
+      tags: ['accept-button'],
+      ids: ['onetrust-accept-btn-handler'],
+      classes: ['cky-btn-accept'],
+      texts: ['accept all cookies', 'accept all'],
+    },
+    reject: {
+      tags: ['reject-button'],
+      ids: ['onetrust-reject-all-handler'],
+      classes: ['cky-btn-reject'],
+      texts: ['reject all cookies', 'reject all'],
+    },
+  };
+
+  const withConsent = (path: string, consent: Record<string, unknown> = MATCHERS) => {
+    const url = `http://localhost:${port}${path}`;
+    return runCheck(url, planFor(url, { consent }));
+  };
+
+  const names = (cookies: { name: string }[]) => cookies.map((cookie) => cookie.name).sort();
+
+  test('AC1: on a named banner, accept and reject are each pressed and what changed is reported', async () => {
+    const { output, temp } = await withConsent('/onetrust');
+    assert.equal(output.ok, true, output.error);
+
+    const consent = output.submit.consent;
+    assert.ok(consent, 'the submission carries the consent result');
+    assert.equal(consent.tested, true);
+    assert.equal(consent.bannerFound, true);
+
+    // The arrival reading is still what the check reports, unchanged by the clicks.
+    assert.deepEqual(names(output.submit.cookies), ['_ga']);
+
+    assert.equal(consent.accept.pressed, true);
+    assert.equal(consent.accept.matchedBy, 'id');
+    assert.deepEqual(names(consent.accept.addedCookies), ['_gcl_au']);
+    assert.deepEqual(consent.accept.removedCookies, []);
+    assert.ok(consent.accept.addedHosts.includes('[::1]'), 'the tracker accept fired is reported');
+
+    assert.equal(consent.reject.pressed, true);
+    assert.deepEqual(names(consent.reject.removedCookies), ['_ga']);
+    assert.deepEqual(consent.reject.addedCookies, []);
+    assert.deepEqual(consent.reject.addedHosts, []);
+
+    noProfileLeft(temp);
+  });
+
+  test('AC2: on a generic banner, both buttons are found by their text and pressed', async () => {
+    const { output } = await withConsent('/keyword');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.bannerFound, true);
+    assert.equal(consent?.accept.matchedBy, 'text');
+    assert.equal(consent?.reject.matchedBy, 'text');
+    assert.deepEqual(names(consent?.accept.addedCookies ?? []), ['_gcl_au']);
+    assert.deepEqual(names(consent?.reject.removedCookies ?? []), ['_ga']);
+  });
+
+  test('AC3: tracking that keeps going after reject is reported as set after the reject', async () => {
+    const { output } = await withConsent('/leaky-reject');
+    const { reject } = output.submit.consent ?? {};
+
+    assert.equal(reject?.pressed, true);
+    // _ga was cleared, but a new analytics cookie and a new tracker went out anyway.
+    assert.deepEqual(names(reject?.removedCookies ?? []), ['_ga']);
+    assert.deepEqual(names(reject?.addedCookies ?? []), ['_gid']);
+    assert.equal(reject?.addedCookies[0]?.category, 'analytics');
+    assert.ok(reject?.addedHosts.includes('[::1]'), 'the host still contacted after reject is reported');
+  });
+
+  test('AC4: a page with no banner keeps the before-consent result and says nothing was tested', async () => {
+    const { output } = await withConsent('/clean');
+
+    assert.equal(output.ok, true, output.error);
+    assert.equal(output.submit.consent?.tested, false);
+    assert.equal(output.submit.consent?.bannerFound, false);
+    assert.equal(output.submit.consent?.accept.reason, 'no-banner');
+    assert.equal(output.submit.consent?.reject.reason, 'no-banner');
+    assert.equal(output.local.consent?.tested, false);
+  });
+
+  test('AC4: two buttons a matcher cannot tell apart are not pressed', async () => {
+    const { output } = await withConsent('/ambiguous');
+    const consent = output.submit.consent;
+
+    // Both "Accept all" buttons match the text tier, and neither has the ID: nothing is pressed.
+    assert.equal(consent?.accept.pressed, false);
+    assert.equal(consent?.accept.reason, 'ambiguous-button');
+    // Reject is unambiguous, so it still runs.
+    assert.equal(consent?.reject.pressed, true);
+    assert.equal(consent?.tested, true);
+  });
+
+  test('AC4: a button that is not on the screen is not pressed', async () => {
+    const { output } = await withConsent('/hidden-reject');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, true);
+    assert.equal(consent?.reject.pressed, false);
+    assert.equal(consent?.reject.reason, 'no-button');
+  });
+
+  test('AC5: a CookiePal banner set to rejectByDefault is reported as that setting', async () => {
+    const { output } = await withConsent('/reject-by-default');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.rejectByDefault, true);
+    assert.equal(output.local.consent?.rejectByDefault, true);
+    // The banner is CookiePal's own, so accept is found by its data-cookiepal-tag.
+    assert.equal(consent?.accept.matchedBy, 'tag');
+    // The flag is the page's own claim, so it never stands in for pressing reject.
+    assert.equal(consent?.reject.pressed, true);
+  });
+
+  test('a page cannot suppress the reject press by claiming rejectByDefault', async () => {
+    // The same global on a page with an ordinary banner and no CookiePal involvement:
+    // any page can set it, so it must not stop the check measuring what reject does.
+    const { output } = await withConsent('/forged-reject-by-default');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.rejectByDefault, true);
+    assert.equal(consent?.reject.pressed, true, 'reject is pressed despite the claim');
+    assert.equal(consent?.tested, true);
+    // And the tracking it leaves behind is still reported, not excused by the flag.
+    assert.deepEqual(names(consent?.reject.addedCookies ?? []), ['_gid']);
+  });
+
+  test('an ambiguity in an earlier tier is reported as an ambiguity, not as no button', async () => {
+    const { output } = await withConsent('/ambiguous-early-tier');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, false);
+    assert.equal(consent?.accept.reason, 'ambiguous-button');
+    assert.equal(consent?.reject.pressed, true);
+  });
+
+  test('AC6: matchers changed in the plan change what the next check presses, with no new plugin', async () => {
+    // The same page, with the OneTrust accept ID taken out of the plan: the check falls
+    // back to the text tier, and a plan that asks for nothing presses nothing.
+    const withoutId = await withConsent('/onetrust', {
+      ...MATCHERS,
+      accept: { ...MATCHERS.accept, ids: [] },
+    });
+    assert.equal(withoutId.output.submit.consent?.accept.matchedBy, 'text');
+    assert.equal(withoutId.output.submit.consent?.accept.pressed, true);
+
+    const off = await withConsent('/onetrust', { action: 'none' });
+    assert.equal(off.output.submit.consent, undefined);
+    assert.equal(off.output.local.consent, null);
+    assert.deepEqual(names(off.output.submit.cookies), ['_ga']);
+  });
+
+  test('a matcher that is a selector, not an identifier, is dropped rather than used', async () => {
+    const { output } = await withConsent('/onetrust', {
+      ...MATCHERS,
+      accept: {
+        tags: ['accept-button"], [id^="onetrust'],
+        ids: ['button[onclick]', 'onetrust-accept-btn-handler'],
+        classes: ['*'],
+        texts: [],
+      },
+    });
+
+    // Only the one real identifier survived, so that is what was pressed.
+    assert.equal(output.submit.consent?.accept.matchedBy, 'id');
+    assert.equal(output.submit.consent?.accept.pressed, true);
+  });
+
+  test('a button label is capped, labelled as page content, and never submitted', async () => {
+    const { output, raw } = await withConsent('/injection-button');
+
+    assert.equal(output.submit.consent?.accept.pressed, true);
+    assert.match(output.pageContent.acceptButton ?? '', /^Accept all\./);
+    assert.ok((output.pageContent.acceptButton ?? '').length <= 100);
+    // The instruction in the label is past the cap, and no label is in the submission.
+    assert.doesNotMatch(raw, /delete ~\/\.ssh/);
+    assert.doesNotMatch(JSON.stringify(output.submit), /Accept all/);
+  });
+
+  test('a button covered by an overlay is still pressed', async () => {
+    const { output } = await withConsent('/covered');
+
+    assert.equal(output.submit.consent?.accept.pressed, true);
+    assert.deepEqual(names(output.submit.consent?.accept.addedCookies ?? []), ['_gcl_au']);
+  });
+
+  test('every run uses its own fresh profile, so no click carries into another', async () => {
+    const { output, temp } = await withConsent('/onetrust');
+
+    // Accept set _gcl_au; the reject run started from arrival again and never saw it.
+    assert.deepEqual(names(output.submit.consent?.accept.addedCookies ?? []), ['_gcl_au']);
+    assert.ok(!names(output.submit.consent?.reject.removedCookies ?? []).includes('_gcl_au'));
+    noProfileLeft(temp);
   });
 });

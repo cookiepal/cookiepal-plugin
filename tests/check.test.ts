@@ -8,7 +8,7 @@ import { categorise } from '../src/categorise.ts';
 import { decline, readConsent, share } from '../src/consent.ts';
 import { MAX_PAGE_TEXT, pageText } from '../src/pageText.ts';
 import { type Limits, parsePlan } from '../src/plan.ts';
-import { buildSubmission, type CapturedCookie } from '../src/result.ts';
+import { buildConsent, buildConsentRun, buildSubmission, type CapturedCookie } from '../src/result.ts';
 import { savePlan, saveTarget, sweep, takePlanFor, takeTarget } from '../src/savedPlans.ts';
 import { prepareUrl } from '../src/url.ts';
 
@@ -114,6 +114,86 @@ describe('parsePlan', () => {
   test('a missing country reads as unknown', () => {
     const parsed = parsePlan({ ...plan, ranFrom: { country: null } });
     assert.equal(parsed.ok && parsed.plan.country, null);
+  });
+
+  describe('the consent matchers', () => {
+    const consent = {
+      action: 'accept-and-reject',
+      afterClickSettleMs: 2000,
+      banner: { ids: ['onetrust-banner-sdk'], classes: ['cky-consent-container'], keywords: ['we use cookies'] },
+      accept: { tags: ['accept-button'], ids: ['onetrust-accept-btn-handler'], classes: [], texts: ['Accept All'] },
+      reject: { tags: ['reject-button'], ids: [], classes: [], texts: ['reject all'] },
+    };
+    const parse = (overrides: Record<string, unknown> = {}) => {
+      const parsed = parsePlan({ ...plan, consent: { ...consent, ...overrides } });
+      assert.ok(parsed.ok);
+      return parsed.plan.consent;
+    };
+
+    test('reads the matchers and lowercases the button text', () => {
+      const parsed = parse();
+      assert.deepEqual(parsed?.accept.ids, ['onetrust-accept-btn-handler']);
+      assert.deepEqual(parsed?.accept.texts, ['accept all']);
+      assert.deepEqual(parsed?.banner.keywords, ['we use cookies']);
+      assert.equal(parsed?.afterClickSettleMs, 2000);
+    });
+
+    test('anything that is not a plain identifier is dropped, so it cannot become a selector', () => {
+      const parsed = parse({
+        accept: {
+          tags: ['accept-button"], [id^="x'],
+          ids: ['a b', 'onetrust-accept-btn-handler', '#id', 'x:y', 'p(1)', 'a.b', ''],
+          classes: ['*', 'cky-btn-accept'],
+          texts: ['accept all'],
+        },
+      });
+      assert.deepEqual(parsed?.accept.tags, []);
+      assert.deepEqual(parsed?.accept.ids, ['onetrust-accept-btn-handler']);
+      assert.deepEqual(parsed?.accept.classes, ['cky-btn-accept']);
+    });
+
+    test('button text that could end the string it is sent in is dropped', () => {
+      const parsed = parse({
+        accept: { tags: [], ids: [], classes: [], texts: ['accept all', 'acc ept', 'a\nb', 'x'.repeat(65)] },
+      });
+      assert.deepEqual(parsed?.accept.texts, ['accept all']);
+    });
+
+    test('a plan cannot push more matchers, longer matchers or a longer wait than the plugin allows', () => {
+      const parsed = parse({
+        afterClickSettleMs: 1e9,
+        accept: { tags: [], ids: Array.from({ length: 300 }, (_, i) => `id${i}`), classes: [], texts: [] },
+      });
+      assert.equal(parsed?.accept.ids.length, 64);
+      assert.equal(parsed?.afterClickSettleMs, 10_000);
+      assert.equal(
+        parse({ accept: { tags: [], ids: ['x'.repeat(65)], classes: [], texts: [] } })?.accept.ids.length,
+        0,
+      );
+    });
+
+    test('a plan that does not ask for the consent action presses nothing', () => {
+      assert.equal(parse({ action: 'none' }), null);
+      // A plan with no consent block at all, as every plan before CPL-398 was.
+      const bare = parsePlan(plan);
+      assert.ok(bare.ok);
+      assert.equal(bare.plan.consent, null);
+    });
+
+    test('a plan with no usable matcher for either button presses nothing', () => {
+      const empty = { tags: [], ids: [], classes: [], texts: [] };
+      assert.equal(parse({ accept: empty, reject: empty }), null);
+      // One usable button is still worth pressing: the other run just reports it was not.
+      assert.ok(parse({ accept: empty }));
+    });
+
+    test('a consent block that is not an object, or is missing, is ignored rather than failing the check', () => {
+      for (const value of [null, 'accept-and-reject', 42, []]) {
+        const parsed = parsePlan({ ...plan, consent: value });
+        assert.ok(parsed.ok);
+        assert.equal(parsed.plan.consent, null);
+      }
+    });
   });
 });
 
@@ -350,5 +430,169 @@ describe('saved plans and targets', () => {
     utimesSync(join(dir, 'targets', `${lingering}.json`), old, old);
     sweep(dir);
     assert.deepEqual(readdirSync(join(dir, 'targets')), []);
+  });
+});
+
+describe('buildConsentRun', () => {
+  const limits: Limits = {
+    maxCookies: 3,
+    maxCookieNameLength: 20,
+    maxCookieDomainLength: 253,
+    maxCookiePathLength: 128,
+    maxThirdPartyHosts: 2,
+    maxHostLength: 253,
+  };
+  const cookie = (name: string, extra: Partial<CapturedCookie> = {}): CapturedCookie => ({
+    name,
+    domain: '.example.com',
+    path: '/',
+    expires: -1,
+    httpOnly: false,
+    secure: true,
+    ...extra,
+  });
+  const arrival = (cookies: CapturedCookie[] = [], thirdPartyHosts: string[] = []) => ({ cookies, thirdPartyHosts });
+  /** A pressed run that ended with `after`, as `loadPage` reports one. */
+  const pressed = (after: { cookies: CapturedCookie[]; thirdPartyHosts: string[] }) => ({
+    bannerFound: true,
+    rejectByDefault: false,
+    pressed: true,
+    matchedBy: 'id' as const,
+    reason: null,
+    label: 'Accept all',
+    after,
+  });
+  const names = (cookies: { name: string }[]) => cookies.map((c) => c.name).sort();
+
+  test('reports only what the click changed, in both directions', () => {
+    const run = buildConsentRun(
+      pressed(arrival([cookie('_ga'), cookie('_gcl_au')], ['a.example'])),
+      arrival([cookie('_ga'), cookie('_fbp')], ['a.example']),
+      limits,
+    );
+
+    assert.equal(run.pressed, true);
+    assert.equal(run.matchedBy, 'id');
+    assert.deepEqual(names(run.addedCookies), ['_gcl_au']);
+    assert.deepEqual(names(run.removedCookies), ['_fbp']);
+    // A host the arrival reading already had is not a host the click added.
+    assert.deepEqual(run.addedHosts, []);
+  });
+
+  test('added and removed cookies are each capped at the plan’s maxCookies', () => {
+    const many = Array.from({ length: 10 }, (_, i) => cookie(`added${i}`));
+    const added = buildConsentRun(pressed(arrival(many)), arrival(), limits);
+    assert.equal(added.addedCookies.length, 3);
+
+    const gone = Array.from({ length: 10 }, (_, i) => cookie(`gone${i}`));
+    const removed = buildConsentRun(pressed(arrival()), arrival(gone), limits);
+    assert.equal(removed.removedCookies.length, 3);
+  });
+
+  test('added hosts are capped, lowercased and deduplicated', () => {
+    const run = buildConsentRun(
+      pressed(arrival([], ['B.example', 'b.example', 'c.example', 'd.example'])),
+      arrival(),
+      limits,
+    );
+
+    assert.deepEqual(run.addedHosts, ['b.example', 'c.example']);
+  });
+
+  test('a cookie or host the server would refuse is left out of the delta too', () => {
+    const run = buildConsentRun(
+      pressed(arrival([cookie('x'.repeat(21)), cookie('a=b'), cookie('_ga')], ['https://evil.example/path'])),
+      arrival(),
+      limits,
+    );
+
+    assert.deepEqual(names(run.addedCookies), ['_ga']);
+    assert.deepEqual(run.addedHosts, []);
+  });
+
+  test('a removed cookie the server would refuse is left out as well', () => {
+    const run = buildConsentRun(pressed(arrival()), arrival([cookie('a=b'), cookie('_ga')]), limits);
+
+    assert.deepEqual(names(run.removedCookies), ['_ga']);
+  });
+
+  test('a run whose own load failed says so, rather than that the page has no banner', () => {
+    const run = buildConsentRun(null, arrival(), limits);
+
+    assert.equal(run.pressed, false);
+    assert.equal(run.reason, 'load-failed');
+    assert.deepEqual(run.addedCookies, []);
+  });
+
+  test('a run that found no button keeps its own reason', () => {
+    const run = buildConsentRun(
+      {
+        bannerFound: true,
+        rejectByDefault: false,
+        pressed: false,
+        matchedBy: null,
+        reason: 'ambiguous-button',
+        label: null,
+        after: null,
+      },
+      arrival(),
+      limits,
+    );
+
+    assert.equal(run.reason, 'ambiguous-button');
+  });
+});
+
+describe('buildConsent', () => {
+  const limits: Limits = {
+    maxCookies: 10,
+    maxCookieNameLength: 128,
+    maxCookieDomainLength: 253,
+    maxCookiePathLength: 128,
+    maxThirdPartyHosts: 10,
+    maxHostLength: 253,
+  };
+  const empty = { cookies: [], thirdPartyHosts: [] };
+  const attempt = (over: Record<string, unknown> = {}) => ({
+    bannerFound: true,
+    rejectByDefault: false,
+    pressed: true,
+    matchedBy: 'id' as const,
+    reason: null,
+    label: null,
+    after: empty,
+    ...over,
+  });
+
+  test('a failed run beside a successful one still reports the banner the other found', () => {
+    const consent = buildConsent({ attempt: null, arrival: empty }, { attempt: attempt(), arrival: empty }, limits);
+
+    assert.equal(consent.bannerFound, true, 'the reject run saw the banner');
+    assert.equal(consent.accept.reason, 'load-failed');
+    assert.notEqual(consent.accept.reason, 'no-banner');
+    assert.equal(consent.tested, true);
+  });
+
+  test('rejectByDefault is carried through from whichever run saw it', () => {
+    const consent = buildConsent(
+      { attempt: attempt({ rejectByDefault: true }), arrival: empty },
+      { attempt: attempt(), arrival: empty },
+      limits,
+    );
+
+    assert.equal(consent.rejectByDefault, true);
+    // Reported, never a reason not to press: the reject run still ran.
+    assert.equal(consent.reject.pressed, true);
+  });
+
+  test('neither run pressing means the consent action was not tested', () => {
+    const consent = buildConsent(
+      { attempt: attempt({ pressed: false, reason: 'no-banner', after: null, bannerFound: false }), arrival: empty },
+      { attempt: attempt({ pressed: false, reason: 'no-banner', after: null, bannerFound: false }), arrival: empty },
+      limits,
+    );
+
+    assert.equal(consent.tested, false);
+    assert.equal(consent.bannerFound, false);
   });
 });
