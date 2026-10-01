@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { CheckError, findBrowser, loadPage } from './browser.ts';
+import { CheckError, type ConsentRequest, findBrowser, loadPage, type PageLoad } from './browser.ts';
+import { categorise } from './categorise.ts';
 import { decline, readConsent, share } from './consent.ts';
 import { pageText } from './pageText.ts';
 import { parsePlan } from './plan.ts';
-import { buildSubmission } from './result.ts';
+import { buildConsent, buildSubmission } from './result.ts';
 import { savePlan, saveTarget, sweep, takePlanFor, takeTarget } from './savedPlans.ts';
 import { prepareUrl } from './url.ts';
 
@@ -128,6 +129,44 @@ const run = async (ref: string | undefined): Promise<Output> => {
   });
   const built = buildSubmission(plan.checkId, load.cookies, load.thirdPartyHosts, plan.limits);
 
+  // The consent action, when the plan asks for it: the page again in its own fresh profile
+  // for accept, and again for reject, each compared with its own arrival reading. The
+  // arrival result above stays the one that is reported and submitted as `cookies`.
+  let consentRuns: { accept: PageLoad | null; reject: PageLoad | null } = { accept: null, reject: null };
+  // Why a consent run has no result: its own load failed, and this says how. Kept local,
+  // so the summary can tell a failed run apart from a page that simply has no banner.
+  const loadErrors: { accept?: string; reject?: string } = {};
+  if (plan.consent) {
+    const consentPlan = plan.consent;
+    const again = (which: ConsentRequest['which']) =>
+      loadPage({
+        browserPath,
+        url: target,
+        settleMs: plan.settleMs,
+        timeoutMs: plan.timeoutMs,
+        consent: { which, plan: consentPlan, matchers: consentPlan[which] },
+      }).catch((error: unknown) => {
+        // The arrival reading already succeeded, so one failed run is not the whole check
+        // failing: it is recorded as that run's own failure and the rest is still reported.
+        loadErrors[which] = error instanceof CheckError ? error.message : 'The run could not be completed.';
+        return null;
+      });
+    // Sequential: two browsers at once would double what the check costs the user's machine.
+    consentRuns = { accept: await again('accept'), reject: await again('reject') };
+
+    built.submission.consent = buildConsent(
+      {
+        attempt: consentRuns.accept?.consent ?? null,
+        arrival: consentRuns.accept ?? { cookies: [], thirdPartyHosts: [] },
+      },
+      {
+        attempt: consentRuns.reject?.consent ?? null,
+        arrival: consentRuns.reject ?? { cookies: [], thirdPartyHosts: [] },
+      },
+      plan.limits,
+    );
+  }
+
   // Set only when the page moved to another host, which the summary then notes.
   let landedOn: string | null = null;
   try {
@@ -135,6 +174,7 @@ const run = async (ref: string | undefined): Promise<Output> => {
     if (finalHost !== new URL(target).host) landedOn = pageText(finalHost);
   } catch {}
 
+  const consent = built.submission.consent;
   return {
     ok: true,
     submit: built.submission,
@@ -146,8 +186,36 @@ const run = async (ref: string | undefined): Promise<Output> => {
       vendors: built.vendors,
       droppedCookies: built.droppedCookies,
       droppedHosts: built.droppedHosts,
+      consent: consent
+        ? {
+            tested: consent.tested,
+            bannerFound: consent.bannerFound,
+            rejectByDefault: consent.rejectByDefault === true,
+            accept: {
+              pressed: consent.accept.pressed,
+              reason: consent.accept.reason ?? null,
+              loadError: loadErrors.accept ?? null,
+            },
+            reject: {
+              pressed: consent.reject.pressed,
+              reason: consent.reject.reason ?? null,
+              loadError: loadErrors.reject ?? null,
+            },
+            vendors: {
+              ...Object.fromEntries(consent.accept.addedCookies.map((c) => [c.name, categorise(c.name).vendor])),
+              ...Object.fromEntries(consent.reject.addedCookies.map((c) => [c.name, categorise(c.name).vendor])),
+            },
+          }
+        : null,
     },
-    pageContent: { notice: PAGE_CONTENT_NOTICE, title: pageText(load.title), landedOn },
+    pageContent: {
+      notice: PAGE_CONTENT_NOTICE,
+      title: pageText(load.title),
+      landedOn,
+      // The labels of the buttons that were pressed, so the user can see what the check clicked.
+      acceptButton: pageText(consentRuns.accept?.consent?.label),
+      rejectButton: pageText(consentRuns.reject?.consent?.label),
+    },
   };
 };
 
