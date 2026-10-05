@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -9,7 +9,16 @@ import { decline, readConsent, share } from '../src/consent.ts';
 import { MAX_PAGE_TEXT, pageText } from '../src/pageText.ts';
 import { type Limits, parsePlan } from '../src/plan.ts';
 import { buildConsent, buildConsentRun, buildSubmission, type CapturedCookie } from '../src/result.ts';
-import { savePlan, saveTarget, sweep, takePlanFor, takeTarget } from '../src/savedPlans.ts';
+import {
+  readResult,
+  savePlan,
+  saveResult,
+  saveTarget,
+  sweep,
+  takePlanFor,
+  takeTarget,
+  writeRendered,
+} from '../src/savedPlans.ts';
 import { prepareUrl } from '../src/url.ts';
 
 describe('prepareUrl', () => {
@@ -594,5 +603,84 @@ describe('buildConsent', () => {
 
     assert.equal(consent.tested, false);
     assert.equal(consent.bannerFound, false);
+  });
+});
+
+describe('submit_check results and the rendered forms', () => {
+  const dataDir = () => mkdtempSync(join(tmpdir(), 'cookiepal-results-'));
+  const CHECK_ID = '11111111-2222-4333-8444-555555555555';
+  const result = { checkId: CHECK_ID, page: 'https://example.com/', cookies: [], thirdPartyHosts: [] };
+  const payload = (over: Record<string, unknown> = {}) => ({
+    tool_name: 'submit_check',
+    tool_input: { checkId: CHECK_ID },
+    tool_response: { structuredContent: result },
+    ...over,
+  });
+
+  test('the hook stores the result, and it survives being read twice', () => {
+    const dir = dataDir();
+    assert.equal(saveResult(dir, payload()), true);
+    assert.deepEqual(readResult(dir, CHECK_ID), result);
+    assert.deepEqual(readResult(dir, CHECK_ID), result, 'a result is not consumed by reading it');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a response with no valid check ID is ignored rather than stored', () => {
+    const dir = dataDir();
+    assert.equal(saveResult(dir, payload({ tool_response: { structuredContent: { checkId: 'nope' } } })), false);
+    assert.equal(saveResult(dir, 'not an object'), false);
+    assert.equal(readResult(dir, CHECK_ID), null);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a result past the 30-minute window is not returned, and is deleted', () => {
+    const dir = dataDir();
+    saveResult(dir, payload());
+    const path = join(dir, 'results', `${CHECK_ID}.json`);
+    const old = Date.now() / 1000 - 31 * 60;
+    utimesSync(path, old, old);
+    assert.equal(readResult(dir, CHECK_ID), null);
+    assert.equal(existsSync(path), false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('readResult refuses anything that is not a check ID', () => {
+    const dir = dataDir();
+    saveResult(dir, payload());
+    for (const bad of ['', '../../etc/passwd', 'not-a-uuid']) assert.equal(readResult(dir, bad), null);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('writeRendered writes each form under the check, and refuses a bad id or name', () => {
+    const dir = dataDir();
+    const path = writeRendered(dir, CHECK_ID, 'report.html', '<p>hi</p>');
+    assert.ok(path);
+    assert.equal(readFileSync(path, 'utf8'), '<p>hi</p>');
+    assert.equal(path, join(dir, 'reports', CHECK_ID, 'report.html'));
+    assert.equal(writeRendered(dir, 'not-a-uuid', 'report.html', 'x'), null);
+    for (const bad of ['../escape.html', 'report', 'a/b.html', 'Report.HTML']) {
+      assert.equal(writeRendered(dir, CHECK_ID, bad, 'x'), null, bad);
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a sweep deletes an expired report directory, not only loose files', () => {
+    const dir = dataDir();
+    for (const name of ['artifact.html', 'report.html', 'report.md']) writeRendered(dir, CHECK_ID, name, 'x');
+    const reportDir = join(dir, 'reports', CHECK_ID);
+    assert.equal(existsSync(reportDir), true);
+    const old = Date.now() / 1000 - 31 * 60;
+    utimesSync(reportDir, old, old);
+    sweep(dir);
+    assert.equal(existsSync(reportDir), false, 'reports/ holds directories, so the sweep must recurse');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a sweep leaves a report that is still inside the window', () => {
+    const dir = dataDir();
+    writeRendered(dir, CHECK_ID, 'report.html', 'x');
+    sweep(dir);
+    assert.equal(existsSync(join(dir, 'reports', CHECK_ID, 'report.html')), true);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
