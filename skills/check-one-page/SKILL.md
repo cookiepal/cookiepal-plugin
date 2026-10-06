@@ -38,7 +38,19 @@ The URL is the command argument, or what the user asked about. If there isn't on
 
 The argument may also name where the read should go in step 9: `artifact`, `html`, `markdown` or `terminal`. Given on its own, with no URL, it sets the default instead: run `CHECK output <mode>`, confirm it, and stop.
 
-If the user wants to stop sharing their install ID (for example `/cookiepal:check stop-sharing`), run `CHECK consent decline`. Confirm that the ID was deleted from this machine and will no longer be sent, and that checks keep working without it. The question is not asked again, so don't suggest it will be. Then stop.
+If the user wants to stop sharing their install ID (for example `/cookiepal:check stop-sharing`), this is also how their stored checks are deleted, and the order matters. Don't number these as steps: they are not the numbered sections below.
+
+- Run `CHECK consent status`. It changes nothing and returns the stored `installId`.
+- If there is one, call the cookiepal server's `forget_install` tool with it. It answers with how many stored checks were deleted and how many remain.
+- Then run `CHECK consent decline`, which deletes the ID from this machine.
+
+Confirm all of it: how many stored checks were deleted, that the ID is gone from this machine and will no longer be sent, and that checks keep working without it. The question is not asked again, so don't suggest it will be. Then stop.
+
+**If there is no stored ID**, skip the `forget_install` call, say there was nothing to delete, and still run `CHECK consent decline` — that is what records the answer, so the sharing question is not asked again.
+
+**If `forget_install` is not there to call**, do not assume it never will be: a server that is down lists no tools at all, and that case looks identical. Report that the deletion cannot be run right now, give the user the ID, and tell them the stored checks are untouched and trying again later is the thing most likely to work. Then stop. Only if the user says plainly that they want to stop sending the ID regardless — accepting that the checks already stored will stay until they expire, and that nothing will be able to find them afterwards — run `CHECK consent decline --anyway`. That is their call to make, never yours.
+
+**If `forget_install` runs and fails**, do not decline. The ID is the only thing that can find those checks, and deleting it locally would leave them unreachable for good. `CHECK consent decline` refuses by itself in this case, which is the guard, not a thing to work around. It also refuses when the erasure did run but Claude Code's hooks are turned off, because the hook on `forget_install` is what records it — the error says so. Report what the tool said — it carries the counts, so some checks may well have been deleted — and tell the user three things: the ID is still on this machine and will keep being sent until this succeeds, running stop-sharing again is safe because it deletes only what is left, and they can mail the ID to support@cookiepal.io instead. Then stop.
 
 ### 2. Prepare
 
