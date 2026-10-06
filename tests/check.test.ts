@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import { isThirdParty } from '../src/browser.ts';
 import { categorise } from '../src/categorise.ts';
-import { decline, readConsent, share } from '../src/consent.ts';
+import { decline, markForgotten, readConsent, share } from '../src/consent.ts';
 import { MAX_PAGE_TEXT, pageText } from '../src/pageText.ts';
 import { type Limits, parsePlan } from '../src/plan.ts';
 import { buildConsent, buildConsentRun, buildSubmission, type CapturedCookie } from '../src/result.ts';
@@ -341,9 +341,35 @@ describe('install ID consent', () => {
     const { installId } = share(dir);
     assert.match(installId ?? '', /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.equal(share(dir).installId, installId);
+    markForgotten(dir, installId ?? '');
     decline(dir);
     assert.deepEqual(readConsent(dir), { asked: true, installId: null });
     assert.doesNotMatch(readFileSync(join(dir, 'install-id.json'), 'utf8'), new RegExp(installId ?? 'x'));
+  });
+
+  // Deleting the ID is the irreversible step: it is the only thing that can find
+  // the checks stored under it, so the order is enforced here, not in the skill.
+  test('withdrawing refuses while a stored ID has not been erased server-side', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+
+    assert.equal(decline(dir), null);
+    assert.equal(readConsent(dir).installId, installId);
+
+    assert.deepEqual(decline(dir, { force: true }), { asked: true, installId: null });
+  });
+
+  test('the erasure marker is per ID, so a stale one does not open the gate', () => {
+    const dir = dataDir();
+    markForgotten(dir, '3b241101-e2bb-4255-8caf-4136c566a962');
+    share(dir);
+
+    assert.equal(decline(dir), null);
+  });
+
+  test('a malformed ID is never recorded as erased', () => {
+    const dir = dataDir();
+    assert.equal(markForgotten(dir, 'not-an-id'), false);
   });
 });
 
