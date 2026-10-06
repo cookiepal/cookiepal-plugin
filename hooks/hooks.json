@@ -3,7 +3,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__plugin_cookiepal_cookiepal__plan_check",
+        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__plan_check",
         "hooks": [
           {
             "type": "command",
@@ -15,7 +15,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__plugin_cookiepal_cookiepal__plan_check",
+        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__plan_check",
         "hooks": [
           {
             "type": "command",
@@ -25,7 +25,7 @@
         ]
       },
       {
-        "matcher": "mcp__plugin_cookiepal_cookiepal__submit_check",
+        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__submit_check",
         "hooks": [
           {
             "type": "command",
