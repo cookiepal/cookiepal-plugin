@@ -1,95 +1,227 @@
-# CookiePal for Claude Code
+<div align="center"><a name="readme-top"></a>
 
-Check any page for cookies and trackers that fire before consent, without leaving Claude Code. **No account needed.**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+  <img src="assets/logo.svg" width="260" alt="CookiePal">
+</picture>
 
-## Install
+<strong>Cookie Consent Made Easy, now inside Claude Code</strong>
 
-In Claude Code:
+**Privacy made simple.** Check any page for the cookies and trackers that fire before consent, and find out what its banner's reject button actually does. Runs on your machine. No account.
+
+<!-- SHIELD GROUP -->
+
+[![License][license-shield]][license-link]
+[![Works with Claude Code][claude-code-shield]][claude-code-link]
+[![No Account][no-account-shield]][no-account-link]
+
+</div>
+
+## 📺 Demo
+
+<div align="center">
+<!-- MEDIA: hero.gif. One /cookiepal:check run, start to verdict.
+     Record with docs/media/hero.tape. See docs/media/README.md. -->
+<img src="docs/media/hero.gif" alt="A CookiePal check running in Claude Code" width="800" />
+</div>
+
+<details>
+<summary><kbd>Table of contents</kbd></summary>
+
+#### TOC
+
+- [📺 Demo](#-demo)
+- [🤔 Why](#-why)
+- [👋 Getting started](#-getting-started)
+- [✨ What a check tells you](#-what-a-check-tells-you)
+  - [🚦 Three passes over the page](#-three-passes-over-the-page)
+  - [⚖️ What each law asks for](#️-what-each-law-asks-for)
+  - [📄 Four ways to read the result](#-four-ways-to-read-the-result)
+  - [👆 It only ever clicks one button](#-it-only-ever-clicks-one-button)
+- [🔐 What is sent to CookiePal](#-what-is-sent-to-cookiepal)
+  - [🆔 The install ID](#-the-install-id)
+- [🔄 Update and uninstall](#-update-and-uninstall)
+- [📦 What is in this repository](#-what-is-in-this-repository)
+- [🤝 Contributing](#-contributing)
+- [📜 Legal](#-legal)
+
+<br/>
+
+</details>
+
+## 🤔 Why
+
+The GDPR requires user approval for certain cookies, you have to tell people what you collect and why, and failing to follow the rules leads to fines and legal trouble. None of that is news. What is hard is knowing whether your own site actually does what your banner says it does.
+
+Most banners are not honest about **reject**. A page sets its analytics and advertising cookies the moment it loads, the banner appears after the fact, and pressing "reject all" quietly leaves half of them running.
+
+You can find that out with devtools, a clean browser profile and twenty minutes per page. Or you can ask, from the editor you are already in, and get an answer in one line.
+
+CookiePal loads one page in a throwaway browser profile on your machine, records what was set before anyone agreed to anything, then presses the banner's accept and reject buttons and tells you what each one actually did. Cheap, easy, fast, like the rest of [CookiePal](https://cookiepal.io).
+
+## 👋 Getting started
+
+Paste this into Claude Code and it will install CookiePal itself:
 
 ```
-/plugin marketplace add westpoint-io/claude-code-plugin
-/plugin install cookiepal@cookiepal
+Install the CookiePal plugin for me. Run these in Bash:
+  claude plugin marketplace add westpoint-io/claude-code-plugin
+  claude plugin install cookiepal@cookiepal
+Then tell me to run /reload-plugins myself, and what to expect from /mcp.
 ```
 
-Or from your terminal:
+Or do it yourself:
 
-```sh
-claude plugin marketplace add westpoint-io/claude-code-plugin
-claude plugin install cookiepal@cookiepal
-```
+- **In Claude Code**
 
-Restart Claude Code after installing. Run `/mcp` and you should see the `cookiepal` server listed as connected.
+  ```
+  /plugin marketplace add westpoint-io/claude-code-plugin
+  /plugin install cookiepal@cookiepal
+  /reload-plugins
+  ```
 
-## Use
+- **From your terminal**
+
+  ```sh
+  claude plugin marketplace add westpoint-io/claude-code-plugin
+  claude plugin install cookiepal@cookiepal
+  ```
+
+  Then restart Claude Code, since a session already running will not pick it up.
+
+Run `/mcp` and you should see `cookiepal` listed as connected. Then:
 
 ```
 /cookiepal:check https://example.com
 ```
 
-The check loads one page in a fresh, temporary browser profile on your machine and reports what was set before you gave consent. It then loads the page twice more, presses the banner's accept button in one run and its reject button in the other, and reports what each one changed — including anything still set or still being contacted after an explicit reject. It is an advisory check of a single page, labelled with the country it ran from. It is not a full site scan and it does not change anything in a CookiePal account. It works on any page your machine can reach, including `localhost`.
+Requires [Node.js](https://nodejs.org) 18+ and Google Chrome, Microsoft Edge, Brave or Chromium. If your browser lives somewhere unusual, point `COOKIEPAL_BROWSER` at its executable.
 
-It then explains what it found against the GDPR, the CCPA and CPRA, the LGPD and Quebec's Law 25, in plain language, and can publish that read as a page you can share. The laws differ on whether tracking needs permission up front or only a way to opt out, so each one gets its own explanation rather than a single score. It never tells you a site is compliant or non-compliant: one page, loaded once, from one country, cannot show that. It says what was found and what each law asks for.
+## ✨ What a check tells you
 
-The only thing it ever clicks is one consent button. It never presses a button it is unsure of: where no banner is found, or more than one button matches, the check reports what was set on arrival and says the consent action was not tested. The matchers that find those buttons come from CookiePal with each check, so they improve without you updating the plugin.
+### 🚦 Three passes over the page
 
-You need [Node.js](https://nodejs.org) 18 or later and Google Chrome, Microsoft Edge, Brave or Chromium. The check never uses your own browser profile, so your cookies and sign-ins are never read. To use a browser installed somewhere unusual, set `COOKIEPAL_BROWSER` to its executable.
+Each in a fresh temporary profile:
 
-### What is sent to CookiePal
+| Pass | Question it answers |
+| --- | --- |
+| **Arrival** | What was set before you touched anything? |
+| **Accept** | What does agreeing actually turn on? |
+| **Reject** | What is *still* running after you said no? |
+
+That third row is usually the interesting one.
+
+You get every cookie with its category, every third-party host the page contacted, and what changed between the three passes.
+
+### ⚖️ What each law asks for
+
+<!-- MEDIA (optional): risk-read.png. A still of the rendered read, which a
+     terminal recording cannot show. See docs/media/README.md. -->
+
+The result comes with a plain-language read against the **GDPR**, the **CCPA and CPRA**, the **LGPD** and **Quebec's Law 25**. The laws disagree about whether tracking needs permission up front or only a way to opt out, so each gets its own answer instead of a single meaningless score.
+
+Every sentence it prints about a law is fixed text that ships with the plugin and is reviewed before release, so the explanation cannot drift or be reworded by the model running it.
+
+**It will never tell you that a site is compliant.** One page, loaded once, from one country, cannot show that, and we are not your lawyers. It tells you what was found and what each law asks for. The read is advisory and is not legal advice.
+
+### 📄 Four ways to read the result
+
+```
+/cookiepal:check https://example.com artifact    # default, published to claude.ai
+/cookiepal:check https://example.com html        # a local HTML file
+/cookiepal:check https://example.com markdown    # a local .md file
+/cookiepal:check https://example.com terminal    # straight to your terminal
+```
+
+Same words every time. Only the styling differs. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. Set one as your default if you would rather artifacts were never used.
+
+### 👆 It only ever clicks one button
+
+The check presses one consent button and nothing else. If it cannot find a banner, or more than one button matches, it reports what was set on arrival and tells you the consent action was not tested. **It never presses a button it is unsure of.**
+
+The matchers that find those buttons are delivered by CookiePal with each check, so they get better without you updating anything.
+
+It works on any page your machine can reach, including `localhost` and pre-release sites a hosted scanner can never see.
+
+## 🔐 What is sent to CookiePal
 
 Only what it takes to count checks and store the result:
 
-- the page's origin and path, without its query string or fragment, which stay on your machine;
-- each cookie's name, domain, path, expiry, flags and category, never its value;
-- the third-party hosts the page contacted;
-- the plugin's version number;
-- a random install ID, only if you agreed to share it.
+- the page's **origin and path**. The query string and fragment are stripped before anything is sent, because they carry tokens, and the plugin refuses to send an address that still has one;
+- each cookie's **name, domain, path, expiry, flags and category**, but **never its value**, which the server has no field for and rejects outright;
+- the **third-party hosts** the page contacted;
+- the **plugin version**;
+- the **country** the check ran from, worked out from your IP address, which is **not stored**;
+- a **random install ID**, only if you agreed to share one.
 
-The page is loaded on your machine, never by CookiePal. Each cookie is categorised on your machine with the open-source [`@cookiepal-oss/cookie-db`](https://www.npmjs.com/package/@cookiepal-oss/cookie-db) catalogue.
+**The page is loaded by you, on your machine. CookiePal never loads it.** Cookies are categorised locally against the open-source [`@cookiepal-oss/cookie-db`](https://www.npmjs.com/package/@cookiepal-oss/cookie-db) catalogue, so nothing is sent anywhere to be identified. The risk read is assembled locally too.
 
-### The risk read
+The check never uses your own browser profile, so your cookies and sign-ins are never opened and never read.
 
-The read runs entirely on your machine and sends nothing to CookiePal. Every sentence it prints about a law is fixed text that ships with the plugin and is reviewed before release, so the explanation cannot drift or be rephrased by the model running it. No cookie descriptions are involved: CookiePal's own cached descriptions are machine-written and are never used here.
+Because this runs inside Claude Code, the page address, the cookies and the result also pass through your own Claude Code session, under your own agreement with Anthropic. CookiePal neither controls that nor receives a copy.
 
-It can also render the same read as a self-contained page, with CookiePal's branding, which Claude Code can publish as an artifact you can open in a browser and share. Publishing an artifact needs a signed-in claude.ai account on a paid plan; without one, the check writes the page to a file you can open yourself. The terminal read works on every plan.
+Stored checks are deleted automatically after 180 days. Full detail: [privacy notice](https://cookiepal.io/plugin-privacy).
 
-The read is advisory and is not legal advice.
+### 🆔 The install ID
 
-### Install ID
+We would like to know how many *people* use this, rather than only how many checks run. The first check asks you once whether to share a random install ID. **The default is no, and the check works either way.** It is created only after a yes, lives in the plugin's data folder, and goes when you uninstall.
 
-The first check asks once whether to share a random install ID, which lets CookiePal count unique installs. The default is no, and the check runs either way. The ID is created only after a yes. It is kept in the plugin's data folder and deleted when you uninstall. To stop sharing it and delete it:
+To stop sharing it and delete it:
 
 ```
 /cookiepal:check stop-sharing
 ```
 
-## Update
+Checks you already submitted keep the ID they were sent with until they expire. Send it to [support@cookiepal.io](mailto:support@cookiepal.io) and we will delete them.
+
+## 🔄 Update and uninstall
 
 ```
 /plugin marketplace update cookiepal
+/plugin update cookiepal@cookiepal
 ```
 
-Then open `/plugin` to install the new version. From your terminal:
-
-```sh
-claude plugin marketplace update cookiepal
-claude plugin update cookiepal@cookiepal
-```
-
-Restart Claude Code to apply the update.
-
-## Uninstall
+Restart Claude Code to apply an update. To remove it entirely:
 
 ```
 /plugin uninstall cookiepal@cookiepal
 /plugin marketplace remove cookiepal
 ```
 
-## What is in this repository
+## 📦 What is in this repository
 
-The plugin itself: the manifests, the `/cookiepal:check` command, the `check-one-page` skill, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each `plan_check` plan and each `submit_check` result to that check. Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its one dependency, `@cookiepal-oss/cookie-db`. Rebuild it with `pnpm build`. CI fails when it is out of date.
+The plugin itself: the manifests, the `/cookiepal:check` command, the `check-one-page` skill, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan and each result to that check.
+
+Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its one dependency. Rebuild it with `pnpm build`; CI fails when it is out of date.
 
 `plan_check` and `submit_check` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
 
-## License
+## 🤝 Contributing
 
-[MIT](LICENSE)
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the build, test and lint commands and the code conventions.
+
+## 📜 Legal
+
+- [Privacy notice](https://cookiepal.io/plugin-privacy). What a check sends, what never leaves your machine, and how to have it deleted.
+- [Terms of service](https://cookiepal.io/plugin-terms). The free hosted service. You accept them by using it.
+- The plugin's own code is [MIT](LICENSE) licensed. That licence covers the code in this repository; it does not cover the hosted service, which the terms above do.
+
+Only check pages you own, operate, or are otherwise entitled to test.
+
+CookiePal is a product of [Westpoint](https://westpoint.io). Claude and Claude Code are trademarks of Anthropic, used here only to say what this plugin works with.
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
+<!-- LINK GROUP -->
+
+[back-to-top]: https://img.shields.io/badge/-BACK_TO_TOP-151515?style=flat-square
+[license-shield]: https://img.shields.io/badge/license-MIT-EF8600?labelColor=222322&style=flat-square
+[license-link]: ./LICENSE
+[claude-code-shield]: https://img.shields.io/badge/works_with-Claude_Code-EF8600?labelColor=222322&style=flat-square
+[claude-code-link]: https://claude.com/claude-code
+[no-account-shield]: https://img.shields.io/badge/account-not_required-EF8600?labelColor=222322&style=flat-square
+[no-account-link]: #-what-is-sent-to-cookiepal
