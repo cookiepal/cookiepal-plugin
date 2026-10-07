@@ -113,10 +113,10 @@ const gridTable = (findings: Finding[]): string[] => {
     `| --- |${laws.map(() => ' :-: |').join('')}`,
     ...findings.map(
       (finding) =>
-        `| ${cell(finding.title)} | ${finding.byLaw.map(({ applies }) => (applies ? 'flagged' : '—')).join(' | ')} |`,
+        `| ${cell(finding.title)} | ${finding.byLaw.map(({ applies }) => (applies ? 'flagged' : 'not flagged')).join(' | ')} |`,
     ),
     '',
-    'Everything marked **flagged** is explained below. A dash means that law does not treat it as a problem, and the reason is given with the finding.',
+    'Everything marked **flagged** is explained below. **Not flagged** means that law does not treat it as a problem, and the reason is given with the finding. Neither is a verdict on the page.',
   ];
 };
 
