@@ -2,7 +2,10 @@
   "mcpServers": {
     "cookiepal": {
       "type": "http",
-      "url": "https://mcp.cookiepal.io/mcp"
+      "url": "https://mcp.cookiepal.io/mcp",
+      "oauth": {
+        "callbackPort": 4728
+      }
     }
   }
 }
