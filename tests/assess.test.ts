@@ -311,7 +311,18 @@ describe('renderReport', () => {
   test('defines every colour token on bare :root before the dark blocks redefine them', () => {
     const html = page();
     const root = html.slice(html.indexOf(':root {'), html.indexOf('@media (prefers-color-scheme: dark)'));
-    const tokens = ['--bg', '--surface', '--ink', '--body', '--muted', '--line', '--brand', '--flag', '--flag-edge', '--lead-edge'];
+    const tokens = [
+      '--bg',
+      '--surface',
+      '--ink',
+      '--body',
+      '--muted',
+      '--line',
+      '--brand',
+      '--flag',
+      '--flag-edge',
+      '--lead-edge',
+    ];
     for (const token of tokens) {
       assert.ok(root.includes(`${token}:`), `${token} must exist in the light palette`);
     }
@@ -335,7 +346,10 @@ describe('renderReport', () => {
   test('loads nothing the artifact policy blocks: no external image, script or stylesheet but fonts', () => {
     const html = page();
     assert.ok(!/<script/i.test(html), 'the page needs no script at all');
-    assert.ok(!/<img|background-image/i.test(html), 'the logo lockups are inline SVG, since external images are blocked');
+    assert.ok(
+      !/<img|background-image/i.test(html),
+      'the logo lockups are inline SVG, since external images are blocked',
+    );
     const sheets = [...html.matchAll(/<link[^>]+href="([^"]+)"/g)].map(([, href]) => href);
     for (const href of sheets) assert.match(href, /^https:\/\/fonts\.(googleapis|gstatic)\.com/);
   });

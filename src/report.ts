@@ -262,7 +262,8 @@ const grid = (findings: Finding[]): string =>
         `<tr><td>${esc(finding.title)}</td>` +
         finding.byLaw
           .map(
-            ({ applies }) => `<td class="mark-cell ${applies ? 'yes' : 'no'}">${applies ? 'flagged' : 'not flagged'}</td>`,
+            ({ applies }) =>
+              `<td class="mark-cell ${applies ? 'yes' : 'no'}">${applies ? 'flagged' : 'not flagged'}</td>`,
           )
           .join('') +
         '</tr>',
