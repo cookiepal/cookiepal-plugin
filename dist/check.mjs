@@ -523,7 +523,7 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
   };
 };
 
-// ../../../../../../../../Users/davbio/Desktop/web/claude-code-plugin/node_modules/.pnpm/@cookiepal-oss+cookie-db@1.0.0/node_modules/@cookiepal-oss/cookie-db/dist/index.js
+// node_modules/.pnpm/@cookiepal-oss+cookie-db@1.0.0/node_modules/@cookiepal-oss/cookie-db/dist/index.js
 var cookies_default = [
   {
     name: "___ELEVAR_GTM_SUITE--",
