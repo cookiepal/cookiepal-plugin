@@ -476,6 +476,8 @@ describe('buildConsentRun', () => {
     // Everything still set, including _ga, which the arrival reading also had:
     // the server counts these, so a surviving cookie has to be in the list.
     assert.deepEqual(names(run.cookiesAfterClick), ['_ga', '_gcl_au']);
+    // And of those, only the one this run's own arrival did not have.
+    assert.deepEqual(names(run.newAfterClick), ['_gcl_au']);
     // And the hosts are the run's own post-click set, whatever arrival saw.
     assert.deepEqual(run.hostsAfterClick, ['a.example']);
   });
@@ -489,6 +491,18 @@ describe('buildConsentRun', () => {
     const run = buildConsentRun(pressed(arrival([], ['tracker.example'])), arrival([], ['tracker.example']), limits);
 
     assert.deepEqual(run.hostsAfterClick, ['tracker.example']);
+  });
+
+  /**
+   * The delta is against this run's own arrival, so a cookie that was already
+   * there and survived is not reported as one the press set. That distinction
+   * is what `set-after-reject` in the risk read is built on.
+   */
+  test('a cookie that survived the press is not reported as one the press set', () => {
+    const run = buildConsentRun(pressed(arrival([cookie('_ga'), cookie('_gid')])), arrival([cookie('_ga')]), limits);
+
+    assert.deepEqual(names(run.cookiesAfterClick), ['_ga', '_gid']);
+    assert.deepEqual(names(run.newAfterClick), ['_gid']);
   });
 
   test('the surviving cookies are capped at the plan’s maxCookies', () => {
