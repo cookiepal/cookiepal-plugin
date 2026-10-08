@@ -25,20 +25,15 @@ export interface SubmittedCookie {
   category: Category;
 }
 
-export interface CookieRef {
-  name: string;
-  domain: string;
-  path: string;
-}
-
-/** What one consent click changed, against that run's own arrival reading. */
+/** What one consent run saw after its click, read absolutely rather than as a delta. */
 export interface SubmittedConsentRun {
   pressed: boolean;
   reason?: ConsentSkipReason;
   matchedBy?: MatchedBy;
-  addedCookies: SubmittedCookie[];
-  removedCookies: CookieRef[];
-  addedHosts: string[];
+  /** Every cookie still set after the press. */
+  cookiesAfterClick: SubmittedCookie[];
+  /** Third-party hosts contacted since the press, which the browser tracks separately. */
+  hostsAfterClick: string[];
 }
 
 export interface SubmittedConsent {
@@ -99,24 +94,25 @@ const toSubmitted = (cookie: CapturedCookie, limits: Limits): SubmittedCookie | 
   };
 };
 
-const key = ({ name, domain, path }: CookieRef) => `${name}\n${domain}\n${path}`;
-
 const NOT_PRESSED = (reason: ConsentSkipReason): SubmittedConsentRun => ({
   pressed: false,
   reason,
-  addedCookies: [],
-  removedCookies: [],
-  addedHosts: [],
+  cookiesAfterClick: [],
+  hostsAfterClick: [],
 });
 
 /**
- * What one run's click changed, as deltas against that run's own arrival
- * reading. Deltas only: the arrival set is already submitted as `cookies`, and
- * a cookie the server would refuse is dropped here exactly as it is there.
+ * What one run saw after its click. Absolute, from this run alone: the server
+ * used to reconstruct it by subtracting deltas from a different page load's
+ * arrival, so the surviving count moved between runs on one site, and a tracker
+ * that ran from arrival through reject could not appear at all.
+ *
+ * `arrival` is no longer needed to build this, and is kept only so a run that
+ * was never pressed still reports why.
  */
 export const buildConsentRun = (
   attempt: ConsentAttempt | null,
-  arrival: { cookies: CapturedCookie[]; thirdPartyHosts: string[] },
+  _arrival: { cookies: CapturedCookie[]; thirdPartyHosts: string[] },
   limits: Limits,
 ): SubmittedConsentRun => {
   // No attempt at all means this run's own load failed, so nothing was seen of the page.
@@ -124,36 +120,24 @@ export const buildConsentRun = (
   if (!attempt) return NOT_PRESSED('load-failed');
   if (!attempt.pressed || !attempt.after) return NOT_PRESSED(attempt.reason ?? 'no-button');
 
-  const before = new Set(arrival.cookies.map(key));
-  const after = new Set(attempt.after.cookies.map(key));
-  const beforeHosts = new Set(arrival.thirdPartyHosts.map((host) => host.toLowerCase()));
-
-  const addedCookies: SubmittedCookie[] = [];
+  const cookiesAfterClick: SubmittedCookie[] = [];
   for (const cookie of attempt.after.cookies) {
-    if (before.has(key(cookie)) || addedCookies.length >= limits.maxCookies) continue;
+    if (cookiesAfterClick.length >= limits.maxCookies) break;
     const submitted = toSubmitted(cookie, limits);
-    if (submitted) addedCookies.push(submitted);
+    if (submitted) cookiesAfterClick.push(submitted);
   }
 
-  const removedCookies: CookieRef[] = [];
-  for (const cookie of arrival.cookies) {
-    if (after.has(key(cookie)) || removedCookies.length >= limits.maxCookies) continue;
-    const submitted = toSubmitted(cookie, limits);
-    if (submitted) removedCookies.push({ name: submitted.name, domain: submitted.domain, path: submitted.path });
-  }
-
-  const addedHosts: string[] = [];
+  const hostsAfterClick: string[] = [];
   for (const host of new Set(attempt.after.thirdPartyHosts.map((h) => h.toLowerCase()))) {
-    if (beforeHosts.has(host) || addedHosts.length >= limits.maxThirdPartyHosts) continue;
-    if (fits(host, HOSTNAME, limits.maxHostLength)) addedHosts.push(host);
+    if (hostsAfterClick.length >= limits.maxThirdPartyHosts) break;
+    if (fits(host, HOSTNAME, limits.maxHostLength)) hostsAfterClick.push(host);
   }
 
   return {
     pressed: true,
     ...(attempt.matchedBy ? { matchedBy: attempt.matchedBy } : {}),
-    addedCookies,
-    removedCookies,
-    addedHosts,
+    cookiesAfterClick,
+    hostsAfterClick,
   };
 };
 
