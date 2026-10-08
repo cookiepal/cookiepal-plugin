@@ -18,9 +18,13 @@ describe('.mcp.json', () => {
     assert.deepEqual(Object.keys(mcpServers), ['cookiepal']);
   });
 
-  // Anything beyond type and url (headers, env, command, args) is where a credential would go.
+  // Anything beyond type, url and oauth (headers, env, command, args) is where a credential would go.
   test('the server is the public URL with no credentials', () => {
-    assert.deepEqual(mcpServers.cookiepal, { type: 'http', url: SERVER_URL });
+    assert.deepEqual(mcpServers.cookiepal, {
+      type: 'http',
+      url: SERVER_URL,
+      oauth: { callbackPort: 4728 },
+    });
   });
 });
 
