@@ -464,56 +464,60 @@ describe('buildConsentRun', () => {
   });
   const names = (cookies: { name: string }[]) => cookies.map((c) => c.name).sort();
 
-  test('reports only what the click changed, in both directions', () => {
+  test('reports what the page looked like after the click, not the difference', () => {
     const run = buildConsentRun(
       pressed(arrival([cookie('_ga'), cookie('_gcl_au')], ['a.example'])),
-      arrival([cookie('_ga'), cookie('_fbp')], ['a.example']),
+      arrival([cookie('_ga'), cookie('_fbp')], ['b.example']),
       limits,
     );
 
     assert.equal(run.pressed, true);
     assert.equal(run.matchedBy, 'id');
-    assert.deepEqual(names(run.addedCookies), ['_gcl_au']);
-    assert.deepEqual(names(run.removedCookies), ['_fbp']);
-    // A host the arrival reading already had is not a host the click added.
-    assert.deepEqual(run.addedHosts, []);
+    // Everything still set, including _ga, which the arrival reading also had:
+    // the server counts these, so a surviving cookie has to be in the list.
+    assert.deepEqual(names(run.cookiesAfterClick), ['_ga', '_gcl_au']);
+    // And the hosts are the run's own post-click set, whatever arrival saw.
+    assert.deepEqual(run.hostsAfterClick, ['a.example']);
   });
 
-  test('added and removed cookies are each capped at the plan’s maxCookies', () => {
-    const many = Array.from({ length: 10 }, (_, i) => cookie(`added${i}`));
-    const added = buildConsentRun(pressed(arrival(many)), arrival(), limits);
-    assert.equal(added.addedCookies.length, 3);
+  /**
+   * The whole reason the shape changed: a host contacted on arrival that keeps
+   * being contacted after reject is the finding the check exists for, and a
+   * difference against arrival could never show it.
+   */
+  test('keeps a host that was already contacted on arrival and is contacted again', () => {
+    const run = buildConsentRun(pressed(arrival([], ['tracker.example'])), arrival([], ['tracker.example']), limits);
 
-    const gone = Array.from({ length: 10 }, (_, i) => cookie(`gone${i}`));
-    const removed = buildConsentRun(pressed(arrival()), arrival(gone), limits);
-    assert.equal(removed.removedCookies.length, 3);
+    assert.deepEqual(run.hostsAfterClick, ['tracker.example']);
   });
 
-  test('added hosts are capped, lowercased and deduplicated', () => {
+  test('the surviving cookies are capped at the plan’s maxCookies', () => {
+    const many = Array.from({ length: 10 }, (_, i) => cookie(`left${i}`));
+
+    const run = buildConsentRun(pressed(arrival(many)), arrival(), limits);
+
+    assert.equal(run.cookiesAfterClick.length, 3);
+  });
+
+  test('hosts after the click are capped, lowercased and deduplicated', () => {
     const run = buildConsentRun(
       pressed(arrival([], ['B.example', 'b.example', 'c.example', 'd.example'])),
       arrival(),
       limits,
     );
 
-    assert.deepEqual(run.addedHosts, ['b.example', 'c.example']);
+    assert.deepEqual(run.hostsAfterClick, ['b.example', 'c.example']);
   });
 
-  test('a cookie or host the server would refuse is left out of the delta too', () => {
+  test('a cookie or host the server would refuse is left out here too', () => {
     const run = buildConsentRun(
       pressed(arrival([cookie('x'.repeat(21)), cookie('a=b'), cookie('_ga')], ['https://evil.example/path'])),
       arrival(),
       limits,
     );
 
-    assert.deepEqual(names(run.addedCookies), ['_ga']);
-    assert.deepEqual(run.addedHosts, []);
-  });
-
-  test('a removed cookie the server would refuse is left out as well', () => {
-    const run = buildConsentRun(pressed(arrival()), arrival([cookie('a=b'), cookie('_ga')]), limits);
-
-    assert.deepEqual(names(run.removedCookies), ['_ga']);
+    assert.deepEqual(names(run.cookiesAfterClick), ['_ga']);
+    assert.deepEqual(run.hostsAfterClick, []);
   });
 
   test('a run whose own load failed says so, rather than that the page has no banner', () => {
@@ -521,7 +525,7 @@ describe('buildConsentRun', () => {
 
     assert.equal(run.pressed, false);
     assert.equal(run.reason, 'load-failed');
-    assert.deepEqual(run.addedCookies, []);
+    assert.deepEqual(run.cookiesAfterClick, []);
   });
 
   test('a run that found no button keeps its own reason', () => {

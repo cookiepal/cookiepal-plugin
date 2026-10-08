@@ -202,8 +202,8 @@ const run = async (ref: string | undefined): Promise<Output> => {
               loadError: loadErrors.reject ?? null,
             },
             vendors: {
-              ...Object.fromEntries(consent.accept.addedCookies.map((c) => [c.name, categorise(c.name).vendor])),
-              ...Object.fromEntries(consent.reject.addedCookies.map((c) => [c.name, categorise(c.name).vendor])),
+              ...Object.fromEntries(consent.accept.cookiesAfterClick.map((c) => [c.name, categorise(c.name).vendor])),
+              ...Object.fromEntries(consent.reject.cookiesAfterClick.map((c) => [c.name, categorise(c.name).vendor])),
             },
           }
         : null,
