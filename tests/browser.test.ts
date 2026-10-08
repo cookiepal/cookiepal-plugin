@@ -59,9 +59,8 @@ interface ConsentRun {
   pressed: boolean;
   reason?: string;
   matchedBy?: string;
-  addedCookies: { name: string; category: string }[];
-  removedCookies: { name: string }[];
-  addedHosts: string[];
+  cookiesAfterClick: { name: string; category: string }[];
+  hostsAfterClick: string[];
 }
 
 const requests: string[] = [];
@@ -809,14 +808,14 @@ describe('the consent action', () => {
 
     assert.equal(consent.accept.pressed, true);
     assert.equal(consent.accept.matchedBy, 'id');
-    assert.deepEqual(names(consent.accept.addedCookies), ['_gcl_au']);
-    assert.deepEqual(consent.accept.removedCookies, []);
-    assert.ok(consent.accept.addedHosts.includes('[::1]'), 'the tracker accept fired is reported');
+    // Absolute: the arrival cookie is still set after accept, and so is the one accept added.
+    assert.deepEqual(names(consent.accept.cookiesAfterClick), ['_ga', '_gcl_au']);
+    assert.ok(consent.accept.hostsAfterClick.includes('[::1]'), 'the tracker accept fired is reported');
 
     assert.equal(consent.reject.pressed, true);
-    assert.deepEqual(names(consent.reject.removedCookies), ['_ga']);
-    assert.deepEqual(consent.reject.addedCookies, []);
-    assert.deepEqual(consent.reject.addedHosts, []);
+    // Reject cleared _ga and set nothing, so nothing is left and nothing was contacted.
+    assert.deepEqual(consent.reject.cookiesAfterClick, []);
+    assert.deepEqual(consent.reject.hostsAfterClick, []);
 
     noProfileLeft(temp);
   });
@@ -828,8 +827,8 @@ describe('the consent action', () => {
     assert.equal(consent?.bannerFound, true);
     assert.equal(consent?.accept.matchedBy, 'text');
     assert.equal(consent?.reject.matchedBy, 'text');
-    assert.deepEqual(names(consent?.accept.addedCookies ?? []), ['_gcl_au']);
-    assert.deepEqual(names(consent?.reject.removedCookies ?? []), ['_ga']);
+    assert.deepEqual(names(consent?.accept.cookiesAfterClick ?? []), ['_ga', '_gcl_au']);
+    assert.deepEqual(consent?.reject.cookiesAfterClick, []);
   });
 
   test('AC3: tracking that keeps going after reject is reported as set after the reject', async () => {
@@ -838,10 +837,9 @@ describe('the consent action', () => {
 
     assert.equal(reject?.pressed, true);
     // _ga was cleared, but a new analytics cookie and a new tracker went out anyway.
-    assert.deepEqual(names(reject?.removedCookies ?? []), ['_ga']);
-    assert.deepEqual(names(reject?.addedCookies ?? []), ['_gid']);
-    assert.equal(reject?.addedCookies[0]?.category, 'analytics');
-    assert.ok(reject?.addedHosts.includes('[::1]'), 'the host still contacted after reject is reported');
+    assert.deepEqual(names(reject?.cookiesAfterClick ?? []), ['_gid']);
+    assert.equal(reject?.cookiesAfterClick[0]?.category, 'analytics');
+    assert.ok(reject?.hostsAfterClick.includes('[::1]'), 'the host still contacted after reject is reported');
   });
 
   test('AC4: a page with no banner keeps the before-consent result and says nothing was tested', async () => {
@@ -897,8 +895,11 @@ describe('the consent action', () => {
     assert.equal(consent?.rejectByDefault, true);
     assert.equal(consent?.reject.pressed, true, 'reject is pressed despite the claim');
     assert.equal(consent?.tested, true);
-    // And the tracking it leaves behind is still reported, not excused by the flag.
-    assert.deepEqual(names(consent?.reject.addedCookies ?? []), ['_gid']);
+    // And the tracking it leaves behind is still reported, not excused by the
+    // flag: the arrival analytics cookie survived the reject and a new one was
+    // set after it, which is exactly the finding a page claiming
+    // `rejectByDefault` would rather not have made.
+    assert.deepEqual(names(consent?.reject.cookiesAfterClick ?? []), ['_ga', '_gid']);
   });
 
   test('an ambiguity in an earlier tier is reported as an ambiguity, not as no button', async () => {
@@ -957,15 +958,15 @@ describe('the consent action', () => {
     const { output } = await withConsent('/covered');
 
     assert.equal(output.submit.consent?.accept.pressed, true);
-    assert.deepEqual(names(output.submit.consent?.accept.addedCookies ?? []), ['_gcl_au']);
+    assert.ok(names(output.submit.consent?.accept.cookiesAfterClick ?? []).includes('_gcl_au'));
   });
 
   test('every run uses its own fresh profile, so no click carries into another', async () => {
     const { output, temp } = await withConsent('/onetrust');
 
     // Accept set _gcl_au; the reject run started from arrival again and never saw it.
-    assert.deepEqual(names(output.submit.consent?.accept.addedCookies ?? []), ['_gcl_au']);
-    assert.ok(!names(output.submit.consent?.reject.removedCookies ?? []).includes('_gcl_au'));
+    assert.ok(names(output.submit.consent?.accept.cookiesAfterClick ?? []).includes('_gcl_au'));
+    assert.ok(!names(output.submit.consent?.reject.cookiesAfterClick ?? []).includes('_gcl_au'));
     noProfileLeft(temp);
   });
 });

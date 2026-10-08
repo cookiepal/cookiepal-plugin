@@ -351,7 +351,11 @@ export const assess = (raw: unknown): Assessment => {
     }
   }
 
-  const addedAfterReject = notNecessary(cookiesOf(reject.addedCookies));
+  // `newAfterClick`, not everything still set: this finding is about a banner
+  // that sets tracking when a visitor declines, which is worse than one that
+  // merely fails to clear what was already there. `active-after-reject` above
+  // covers the latter. The delta is the run's own, against its own arrival.
+  const addedAfterReject = notNecessary(cookiesOf(reject.newAfterClick));
   if (addedAfterReject.length > 0) {
     findings.push(
       finding(
