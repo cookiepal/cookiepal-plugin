@@ -32,6 +32,12 @@ export interface SubmittedConsentRun {
   matchedBy?: MatchedBy;
   /** Every cookie still set after the press. */
   cookiesAfterClick: SubmittedCookie[];
+  /**
+   * Of those, the ones this run's own arrival reading did not have: cookies the
+   * press itself set. A delta, but against the reading from the same page load,
+   * which is what the old one was not.
+   */
+  newAfterClick: SubmittedCookie[];
   /** Third-party hosts contacted since the press, which the browser tracks separately. */
   hostsAfterClick: string[];
 }
@@ -94,10 +100,14 @@ const toSubmitted = (cookie: CapturedCookie, limits: Limits): SubmittedCookie | 
   };
 };
 
+/** Identifies a cookie the way the browser does: name, domain and path together. */
+const key = ({ name, domain, path }: { name: string; domain: string; path: string }) => `${name}\n${domain}\n${path}`;
+
 const NOT_PRESSED = (reason: ConsentSkipReason): SubmittedConsentRun => ({
   pressed: false,
   reason,
   cookiesAfterClick: [],
+  newAfterClick: [],
   hostsAfterClick: [],
 });
 
@@ -107,12 +117,12 @@ const NOT_PRESSED = (reason: ConsentSkipReason): SubmittedConsentRun => ({
  * arrival, so the surviving count moved between runs on one site, and a tracker
  * that ran from arrival through reject could not appear at all.
  *
- * `arrival` is no longer needed to build this, and is kept only so a run that
- * was never pressed still reports why.
+ * `arrival` is this run's own reading, used only for `newAfterClick`: comparing
+ * against it is safe because both come from the same page load.
  */
 export const buildConsentRun = (
   attempt: ConsentAttempt | null,
-  _arrival: { cookies: CapturedCookie[]; thirdPartyHosts: string[] },
+  arrival: { cookies: CapturedCookie[]; thirdPartyHosts: string[] },
   limits: Limits,
 ): SubmittedConsentRun => {
   // No attempt at all means this run's own load failed, so nothing was seen of the page.
@@ -127,6 +137,10 @@ export const buildConsentRun = (
     if (submitted) cookiesAfterClick.push(submitted);
   }
 
+  // Against this run's own arrival, so "the press set this" means exactly that.
+  const before = new Set(arrival.cookies.map(key));
+  const newAfterClick = cookiesAfterClick.filter((cookie) => !before.has(key(cookie)));
+
   const hostsAfterClick: string[] = [];
   for (const host of new Set(attempt.after.thirdPartyHosts.map((h) => h.toLowerCase()))) {
     if (hostsAfterClick.length >= limits.maxThirdPartyHosts) break;
@@ -137,6 +151,7 @@ export const buildConsentRun = (
     pressed: true,
     ...(attempt.matchedBy ? { matchedBy: attempt.matchedBy } : {}),
     cookiesAfterClick,
+    newAfterClick,
     hostsAfterClick,
   };
 };

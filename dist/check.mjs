@@ -9100,10 +9100,10 @@ var parsePlan = (raw) => {
     "maxHostLength"
   ];
   const parsedLimits = {};
-  for (const key of keys) {
-    const value = bounded(limits[key], 1e4);
-    if (value === null) return { ok: false, error: `The plan has no valid ${key}.` };
-    parsedLimits[key] = value;
+  for (const key2 of keys) {
+    const value = bounded(limits[key2], 1e4);
+    if (value === null) return { ok: false, error: `The plan has no valid ${key2}.` };
+    parsedLimits[key2] = value;
   }
   const country = isRecord2(ranFrom) && typeof ranFrom.country === "string" ? ranFrom.country : null;
   return {
@@ -9369,13 +9369,17 @@ var toSubmitted = (cookie, limits) => {
     category: categorise(name).category
   };
 };
+var key = ({ name, domain, path }) => `${name}
+${domain}
+${path}`;
 var NOT_PRESSED = (reason) => ({
   pressed: false,
   reason,
   cookiesAfterClick: [],
+  newAfterClick: [],
   hostsAfterClick: []
 });
-var buildConsentRun = (attempt, _arrival, limits) => {
+var buildConsentRun = (attempt, arrival, limits) => {
   if (!attempt) return NOT_PRESSED("load-failed");
   if (!attempt.pressed || !attempt.after) return NOT_PRESSED(attempt.reason ?? "no-button");
   const cookiesAfterClick = [];
@@ -9384,6 +9388,8 @@ var buildConsentRun = (attempt, _arrival, limits) => {
     const submitted = toSubmitted(cookie, limits);
     if (submitted) cookiesAfterClick.push(submitted);
   }
+  const before = new Set(arrival.cookies.map(key));
+  const newAfterClick = cookiesAfterClick.filter((cookie) => !before.has(key(cookie)));
   const hostsAfterClick = [];
   for (const host of new Set(attempt.after.thirdPartyHosts.map((h) => h.toLowerCase()))) {
     if (hostsAfterClick.length >= limits.maxThirdPartyHosts) break;
@@ -9393,6 +9399,7 @@ var buildConsentRun = (attempt, _arrival, limits) => {
     pressed: true,
     ...attempt.matchedBy ? { matchedBy: attempt.matchedBy } : {},
     cookiesAfterClick,
+    newAfterClick,
     hostsAfterClick
   };
 };
