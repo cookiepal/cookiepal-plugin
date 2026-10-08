@@ -105,8 +105,13 @@ describe('assess', () => {
         consent: {
           tested: true,
           bannerFound: true,
-          accept: { pressed: true, addedCookies: [], removedCookies: [], addedHosts: [] },
-          reject: { pressed: true, addedCookies: [], removedCookies: [], addedHosts: ['www.google-analytics.com'] },
+          accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
+          reject: {
+            pressed: true,
+            cookiesAfterClick: [],
+            newAfterClick: [],
+            hostsAfterClick: ['www.google-analytics.com'],
+          },
         },
       }),
       'active-after-reject',
@@ -117,14 +122,58 @@ describe('assess', () => {
     assert.deepEqual(finding.hosts, ['www.google-analytics.com']);
   });
 
+  /**
+   * The whole point of keeping a delta: a cookie that was already there and
+   * survived the reject is reported by `active-after-reject`, not as one the
+   * press set. Reading `cookiesAfterClick` here instead would accuse every
+   * banner that fails to clear a cookie of actively setting it.
+   */
+  test('a cookie that merely survived reject is not reported as set by it', () => {
+    const assessment = assess(
+      result({
+        cookies: [cookie('_ga', 'analytics')],
+        // What the server computes from the reject run's own reading.
+        summary: {
+          total: 1,
+          byCategory: byCategory({ analytics: 1 }),
+          afterReject: { total: 1, byCategory: byCategory({ analytics: 1 }), stillContactedHosts: [] },
+        },
+        consent: {
+          tested: true,
+          bannerFound: true,
+          accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
+          reject: {
+            pressed: true,
+            // Still set after the press, but it was there on arrival too.
+            cookiesAfterClick: [cookie('_ga', 'analytics')],
+            newAfterClick: [],
+            hostsAfterClick: [],
+          },
+        },
+      }),
+    );
+
+    assert.equal(
+      assessment.findings.some(({ kind }) => kind === 'set-after-reject'),
+      false,
+    );
+    // And the broader finding does fire, so the page is still reported.
+    assert.ok(assessment.findings.some(({ kind }) => kind === 'active-after-reject'));
+  });
+
   test('a cookie set by pressing reject is its own finding', () => {
     const finding = findingOf(
       result({
         consent: {
           tested: true,
           bannerFound: true,
-          accept: { pressed: true, addedCookies: [], removedCookies: [], addedHosts: [] },
-          reject: { pressed: true, addedCookies: [cookie('_gid', 'analytics')], removedCookies: [], addedHosts: [] },
+          accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
+          reject: {
+            pressed: true,
+            cookiesAfterClick: [cookie('_gid', 'analytics')],
+            newAfterClick: [cookie('_gid', 'analytics')],
+            hostsAfterClick: [],
+          },
         },
       }),
       'set-after-reject',
@@ -353,8 +402,8 @@ describe('renderTerminal', () => {
       consent: {
         tested: true,
         bannerFound: true,
-        accept: { pressed: true, addedCookies: [], removedCookies: [], addedHosts: [] },
-        reject: { pressed: true, addedCookies: [], removedCookies: [], addedHosts: [] },
+        accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
+        reject: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
       },
     });
     assert.ok(

@@ -374,6 +374,15 @@ const capture = async (
 ): Promise<PageLoad> => {
   const pageHost = new URL(url).hostname;
   const hosts = new Set<string>();
+  /**
+   * Hosts contacted after the consent button was pressed, tracked separately
+   * because `hosts` is cumulative: a host already in it cannot be added again,
+   * so a tracker that loads on arrival and keeps beaconing through reject would
+   * never show up in a difference taken against the arrival set. This is the
+   * only place that information exists.
+   */
+  const hostsAfterClick = new Set<string>();
+  let pressed = false;
   let mainSession = '';
   let mainFrame = '';
   let documentRequest = '';
@@ -390,7 +399,10 @@ const capture = async (
         const request = params.request as { url: string };
         try {
           const { protocol, hostname } = new URL(request.url);
-          if ((protocol === 'http:' || protocol === 'https:') && isThirdParty(hostname, pageHost)) hosts.add(hostname);
+          if ((protocol === 'http:' || protocol === 'https:') && isThirdParty(hostname, pageHost)) {
+            hosts.add(hostname);
+            if (pressed) hostsAfterClick.add(hostname);
+          }
         } catch {}
         if (sessionId === mainSession && params.type === 'Document' && params.frameId === mainFrame) {
           documentRequest = params.requestId as string;
@@ -467,12 +479,18 @@ const capture = async (
 
   let consent: ConsentAttempt | null = null;
   if (consentRequest) {
+    // Set before the press, not after: requests the click causes start arriving
+    // while `pressConsent` is still awaiting, and those are exactly the ones
+    // being counted.
+    pressed = true;
     const { clicked, ...attempt } = await pressConsent(cdp, mainSession, consentRequest);
     let after: ConsentAttempt['after'] = null;
     if (clicked) {
       await delay(consentRequest.plan.afterClickSettleMs);
       const settled = (await cdp.send('Storage.getCookies')) as { cookies: CapturedCookie[] };
-      after = { cookies: pickCookies(settled.cookies), thirdPartyHosts: [...hosts] };
+      // Absolute: every cookie still set, and only the hosts contacted since
+      // the press. The server counts these rather than reconstructing them.
+      after = { cookies: pickCookies(settled.cookies), thirdPartyHosts: [...hostsAfterClick] };
     }
     consent = { ...attempt, after };
   }
