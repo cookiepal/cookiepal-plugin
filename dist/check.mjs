@@ -3,7 +3,7 @@
 // src/check.ts
 import { readFileSync as readFileSync4 } from "node:fs";
 
-// node_modules/.pnpm/@cookiepal-oss+cookie-db@1.0.0/node_modules/@cookiepal-oss/cookie-db/dist/index.js
+// ../../../../../../../../Users/davbio/Desktop/web/claude-code-plugin/node_modules/.pnpm/@cookiepal-oss+cookie-db@1.0.0/node_modules/@cookiepal-oss/cookie-db/dist/index.js
 var cookies_default = [
   {
     name: "___ELEVAR_GTM_SUITE--",
@@ -8271,7 +8271,7 @@ var assess = (raw) => {
       );
     }
   }
-  const addedAfterReject = notNecessary(cookiesOf(reject.addedCookies));
+  const addedAfterReject = notNecessary(cookiesOf(reject.newAfterClick));
   if (addedAfterReject.length > 0) {
     findings.push(
       finding(
@@ -8733,6 +8733,8 @@ var pressConsent = async (cdp, sessionId, request) => {
 var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
   const pageHost = new URL(url).hostname;
   const hosts = /* @__PURE__ */ new Set();
+  const hostsAfterClick = /* @__PURE__ */ new Set();
+  let pressed = false;
   let mainSession = "";
   let mainFrame = "";
   let documentRequest = "";
@@ -8749,7 +8751,10 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
         const request = params.request;
         try {
           const { protocol, hostname } = new URL(request.url);
-          if ((protocol === "http:" || protocol === "https:") && isThirdParty(hostname, pageHost)) hosts.add(hostname);
+          if ((protocol === "http:" || protocol === "https:") && isThirdParty(hostname, pageHost)) {
+            hosts.add(hostname);
+            if (pressed) hostsAfterClick.add(hostname);
+          }
         } catch {
         }
         if (sessionId === mainSession && params.type === "Document" && params.frameId === mainFrame) {
@@ -8815,12 +8820,13 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
   const arrival = { cookies: pickCookies(cookies2), thirdPartyHosts: [...hosts] };
   let consent2 = null;
   if (consentRequest) {
+    pressed = true;
     const { clicked, ...attempt } = await pressConsent(cdp, mainSession, consentRequest);
     let after = null;
     if (clicked) {
       await delay(consentRequest.plan.afterClickSettleMs);
       const settled = await cdp.send("Storage.getCookies");
-      after = { cookies: pickCookies(settled.cookies), thirdPartyHosts: [...hosts] };
+      after = { cookies: pickCookies(settled.cookies), thirdPartyHosts: [...hostsAfterClick] };
     }
     consent2 = { ...attempt, after };
   }
@@ -9400,39 +9406,32 @@ ${path}`;
 var NOT_PRESSED = (reason) => ({
   pressed: false,
   reason,
-  addedCookies: [],
-  removedCookies: [],
-  addedHosts: []
+  cookiesAfterClick: [],
+  newAfterClick: [],
+  hostsAfterClick: []
 });
 var buildConsentRun = (attempt, arrival, limits) => {
   if (!attempt) return NOT_PRESSED("load-failed");
   if (!attempt.pressed || !attempt.after) return NOT_PRESSED(attempt.reason ?? "no-button");
-  const before = new Set(arrival.cookies.map(key));
-  const after = new Set(attempt.after.cookies.map(key));
-  const beforeHosts = new Set(arrival.thirdPartyHosts.map((host) => host.toLowerCase()));
-  const addedCookies = [];
+  const cookiesAfterClick = [];
   for (const cookie of attempt.after.cookies) {
-    if (before.has(key(cookie)) || addedCookies.length >= limits.maxCookies) continue;
+    if (cookiesAfterClick.length >= limits.maxCookies) break;
     const submitted = toSubmitted(cookie, limits);
-    if (submitted) addedCookies.push(submitted);
+    if (submitted) cookiesAfterClick.push(submitted);
   }
-  const removedCookies = [];
-  for (const cookie of arrival.cookies) {
-    if (after.has(key(cookie)) || removedCookies.length >= limits.maxCookies) continue;
-    const submitted = toSubmitted(cookie, limits);
-    if (submitted) removedCookies.push({ name: submitted.name, domain: submitted.domain, path: submitted.path });
-  }
-  const addedHosts = [];
+  const before = new Set(arrival.cookies.map(key));
+  const newAfterClick = cookiesAfterClick.filter((cookie) => !before.has(key(cookie)));
+  const hostsAfterClick = [];
   for (const host of new Set(attempt.after.thirdPartyHosts.map((h) => h.toLowerCase()))) {
-    if (beforeHosts.has(host) || addedHosts.length >= limits.maxThirdPartyHosts) continue;
-    if (fits(host, HOSTNAME, limits.maxHostLength)) addedHosts.push(host);
+    if (hostsAfterClick.length >= limits.maxThirdPartyHosts) break;
+    if (fits(host, HOSTNAME, limits.maxHostLength)) hostsAfterClick.push(host);
   }
   return {
     pressed: true,
     ...attempt.matchedBy ? { matchedBy: attempt.matchedBy } : {},
-    addedCookies,
-    removedCookies,
-    addedHosts
+    cookiesAfterClick,
+    newAfterClick,
+    hostsAfterClick
   };
 };
 var buildConsent = (accept, reject, limits) => {
@@ -9834,8 +9833,8 @@ var run = async (ref) => {
           loadError: loadErrors.reject ?? null
         },
         vendors: {
-          ...Object.fromEntries(consent2.accept.addedCookies.map((c) => [c.name, categorise(c.name).vendor])),
-          ...Object.fromEntries(consent2.reject.addedCookies.map((c) => [c.name, categorise(c.name).vendor]))
+          ...Object.fromEntries(consent2.accept.cookiesAfterClick.map((c) => [c.name, categorise(c.name).vendor])),
+          ...Object.fromEntries(consent2.reject.cookiesAfterClick.map((c) => [c.name, categorise(c.name).vendor]))
         }
       } : null
     },
