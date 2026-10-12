@@ -8500,6 +8500,108 @@ var parseLocated = (raw) => {
   };
 };
 
+// src/plan.ts
+var PLAN_VERSION = 1;
+var RESULT_VERSION = 1;
+var UPDATE_HINT = "Update the plugin with /plugin marketplace update cookiepal, then restart Claude Code.";
+var MAX_SETTLE_MS = 1e4;
+var MAX_TIMEOUT_MS = 6e4;
+var MAX_AFTER_CLICK_SETTLE_MS = 1e4;
+var MATCHER = /^[A-Za-z0-9_\x2D]{1,64}$/;
+var MAX_MATCHERS = 64;
+var MAX_TEXT_LENGTH = 64;
+var isPlainText = (text) => [...text].every((char) => {
+  const point = char.codePointAt(0) ?? 0;
+  return point > 31 && point !== 127 && point !== 8232 && point !== 8233;
+});
+var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var isRecord2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var bounded = (value, max) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.min(Math.floor(value), max) : null;
+var parsePlan = (raw) => {
+  if (!isRecord2(raw)) return { ok: false, error: "The plan from plan_check is missing or not an object." };
+  if (raw.planVersion !== PLAN_VERSION) {
+    return {
+      ok: false,
+      error: `CookiePal sent a check plan (version ${String(raw.planVersion)}) this version of the plugin does not understand. ${UPDATE_HINT}`
+    };
+  }
+  const { checkId, expiresAt, ranFrom, target, load, limits, submit } = raw;
+  if (typeof expiresAt === "string" && Date.parse(expiresAt) <= Date.now()) {
+    return { ok: false, error: "This check plan has expired. Start the check again." };
+  }
+  if (typeof checkId !== "string" || !UUID.test(checkId)) {
+    return { ok: false, error: "The plan has no valid check ID." };
+  }
+  if (!isRecord2(submit) || submit.resultVersion !== RESULT_VERSION) {
+    return { ok: false, error: `The plan asks for a result version this plugin cannot send. ${UPDATE_HINT}` };
+  }
+  if (!isRecord2(target) || typeof target.page !== "string") return { ok: false, error: "The plan has no page." };
+  if (!isRecord2(load) || !isRecord2(limits)) return { ok: false, error: "The plan has no load settings or limits." };
+  const settleMs = bounded(load.settleMs, MAX_SETTLE_MS);
+  const timeoutMs = bounded(load.timeoutMs, MAX_TIMEOUT_MS);
+  if (settleMs === null || timeoutMs === null || timeoutMs === 0) {
+    return { ok: false, error: "The plan has invalid load settings." };
+  }
+  const keys = [
+    "maxCookies",
+    "maxCookieNameLength",
+    "maxCookieDomainLength",
+    "maxCookiePathLength",
+    "maxThirdPartyHosts",
+    "maxHostLength"
+  ];
+  const parsedLimits = {};
+  for (const key2 of keys) {
+    const value = bounded(limits[key2], 1e4);
+    if (value === null) return { ok: false, error: `The plan has no valid ${key2}.` };
+    parsedLimits[key2] = value;
+  }
+  const country = isRecord2(ranFrom) && typeof ranFrom.country === "string" ? ranFrom.country : null;
+  return {
+    ok: true,
+    plan: {
+      checkId,
+      country,
+      page: target.page,
+      settleMs,
+      timeoutMs,
+      limits: parsedLimits,
+      consent: parseConsent(raw.consent)
+    }
+  };
+};
+var identifiers = (value) => (Array.isArray(value) ? value : []).filter((entry) => typeof entry === "string" && MATCHER.test(entry)).slice(0, MAX_MATCHERS);
+var labels = (value) => (Array.isArray(value) ? value : []).filter(
+  (entry) => typeof entry === "string" && entry.length > 0 && entry.length <= MAX_TEXT_LENGTH && isPlainText(entry)
+).map((entry) => entry.toLowerCase()).slice(0, MAX_MATCHERS);
+var buttonMatchers = (value) => {
+  const raw = isRecord2(value) ? value : {};
+  return {
+    tags: identifiers(raw.tags),
+    ids: identifiers(raw.ids),
+    classes: identifiers(raw.classes),
+    texts: labels(raw.texts)
+  };
+};
+var anyMatcher = ({ tags, ids, classes, texts }) => tags.length + ids.length + classes.length + texts.length > 0;
+var parseConsent = (value) => {
+  if (!isRecord2(value) || value.action !== "accept-and-reject") return null;
+  const banner = isRecord2(value.banner) ? value.banner : {};
+  const accept = buttonMatchers(value.accept);
+  const reject = buttonMatchers(value.reject);
+  if (!anyMatcher(accept) && !anyMatcher(reject)) return null;
+  return {
+    afterClickSettleMs: bounded(value.afterClickSettleMs, MAX_AFTER_CLICK_SETTLE_MS) ?? 0,
+    banner: {
+      ids: identifiers(banner.ids),
+      classes: identifiers(banner.classes),
+      keywords: labels(banner.keywords)
+    },
+    accept,
+    reject
+  };
+};
+
 // src/browser.ts
 var CheckError = class extends Error {
 };
@@ -8586,6 +8688,27 @@ var connect = (toBrowser, fromBrowser) => {
   };
 };
 var delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref());
+var QUIET_MS = 1e3;
+var CLICK_QUIET_MS = 2e3;
+var LOCATE_POLL_MS = 100;
+var LOCATE_BUDGET_MS = 2e3;
+var PROBE_MS = 250;
+var settleUntilQuiet = async (activity, requests, probe, ceilingMs, quietMs, floorMs) => {
+  if (ceilingMs <= 0) return { ms: 0, reachedQuiet: null, requests: 0 };
+  const start = Date.now();
+  const before = requests();
+  const since = () => requests() - before;
+  const deadline = start + ceilingMs;
+  const quiet = Math.min(quietMs, ceilingMs);
+  for (; ; ) {
+    const now = Date.now();
+    const waitFor = Math.max(quiet - (now - activity()), floorMs - (now - start));
+    if (waitFor <= 0) return { ms: now - start, reachedQuiet: true, requests: since() };
+    if (now >= deadline) return { ms: now - start, reachedQuiet: false, requests: since() };
+    await delay(Math.min(waitFor, deadline - now, PROBE_MS));
+    await probe();
+  }
+};
 var withTimeout = (promise, ms, message) => Promise.race([
   promise,
   delay(ms).then(() => {
@@ -8648,6 +8771,12 @@ var loadPage = async ({ browserPath, url, settleMs, timeoutMs, consent: consent2
         "--use-mock-keychain",
         "--mute-audio",
         "--window-size=1280,800",
+        // Nothing here tries to make the browser cheaper. Measured on a news front page, a renderer
+        // cap and `--process-per-site` changed neither the process count nor the memory, turning off
+        // site isolation changed neither, and `--single-process` crashes outright. A blank page
+        // already costs around 450 MB across ten processes, so most of it is the browser existing
+        // rather than the site being checked. Flags that would genuinely cut it are the ones that
+        // stop cross-site frames running on their own, which is exactly what the check measures.
         "about:blank"
       ],
       { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] }
@@ -8662,7 +8791,7 @@ var loadPage = async ({ browserPath, url, settleMs, timeoutMs, consent: consent2
     const run2 = capture(cdp, url, settleMs, timeoutMs, consent2);
     return await withTimeout(
       Promise.race([run2, started, closed]),
-      timeoutMs + settleMs + (consent2 ? consent2.plan.afterClickSettleMs + 1e4 : 0) + 2e4,
+      timeoutMs + Math.max(settleMs, MAX_SETTLE_MS) + (consent2 ? LOCATE_BUDGET_MS + Math.max(consent2.plan.afterClickSettleMs, MAX_SETTLE_MS) + 1e4 : 0) + 2e4,
       "The check took too long and was stopped."
     ).finally(async () => {
       await withTimeout(cdp.send("Browser.close"), 3e3, "close").catch(() => {
@@ -8702,8 +8831,15 @@ var evaluate = async (cdp, sessionId, expression) => {
     return null;
   }
 };
-var pressConsent = async (cdp, sessionId, request) => {
-  const located = parseLocated(await evaluate(cdp, sessionId, locateExpression(request.plan, request.matchers)));
+var pressConsent = async (cdp, sessionId, request, budgetMs, onPress) => {
+  const expression = locateExpression(request.plan, request.matchers);
+  const deadline = Date.now() + budgetMs;
+  let located = parseLocated(await evaluate(cdp, sessionId, expression));
+  while (!located.point && (located.reason === "no-banner" || located.reason === "no-button")) {
+    if (Date.now() + LOCATE_POLL_MS >= deadline) break;
+    await delay(LOCATE_POLL_MS);
+    located = parseLocated(await evaluate(cdp, sessionId, expression));
+  }
   const base = {
     bannerFound: located.bannerFound,
     rejectByDefault: located.rejectByDefault,
@@ -8714,6 +8850,7 @@ var pressConsent = async (cdp, sessionId, request) => {
     return { ...base, pressed: false, reason: located.reason ?? "no-button", clicked: false };
   }
   const { x, y } = located.point;
+  await onPress();
   let clicked = false;
   if (located.covered) {
     clicked = await evaluate(cdp, sessionId, clickTargetExpression()) === true;
@@ -8734,6 +8871,24 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
   const pageHost = new URL(url).hostname;
   const hosts = /* @__PURE__ */ new Set();
   const hostsAfterClick = /* @__PURE__ */ new Set();
+  let lastActivityAt = Date.now();
+  let requests = 0;
+  const sawActivity = () => {
+    lastActivityAt = Date.now();
+  };
+  let beforeClick = null;
+  let cookieFingerprint = "";
+  const probeCookies = async () => {
+    try {
+      const { cookies: cookies3 } = await cdp.send("Storage.getCookies");
+      const current = cookies3.map(({ name, domain, path }) => `${name}\0${domain}\0${path}`).sort().join("");
+      if (current !== cookieFingerprint) {
+        cookieFingerprint = current;
+        sawActivity();
+      }
+    } catch {
+    }
+  };
   let pressed = false;
   let mainSession = "";
   let mainFrame = "";
@@ -8748,6 +8903,8 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
   cdp.on(({ method, params = {}, sessionId }) => {
     switch (method) {
       case "Network.requestWillBeSent": {
+        sawActivity();
+        requests++;
         const request = params.request;
         try {
           const { protocol, hostname } = new URL(request.url);
@@ -8763,7 +8920,13 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
         break;
       }
       case "Network.responseReceived":
+        sawActivity();
         if (params.requestId === documentRequest) httpStatus = params.response.status;
+        break;
+      // An answer arriving is the page still working: it is usually what starts the next request.
+      case "Network.loadingFinished":
+      case "Network.loadingFailed":
+        sawActivity();
         break;
       case "Page.loadEventFired":
         if (sessionId === mainSession && navigating) onLoad();
@@ -8815,18 +8978,53 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
     Math.max(0, deadline - Date.now()),
     "load"
   ).catch(() => true);
-  await delay(settleMs);
+  await probeCookies();
+  const settle = await settleUntilQuiet(
+    () => lastActivityAt,
+    () => requests,
+    probeCookies,
+    // A plan asking for no settle is asking for no wait, and still gets none. Otherwise the
+    // plan's figure is the least this waits, and a page still working is followed past it.
+    settleMs <= 0 ? 0 : Math.max(settleMs, MAX_SETTLE_MS),
+    QUIET_MS,
+    settleMs
+  );
   const { cookies: cookies2 } = await cdp.send("Storage.getCookies");
   const arrival = { cookies: pickCookies(cookies2), thirdPartyHosts: [...hosts] };
   let consent2 = null;
   if (consentRequest) {
-    pressed = true;
-    const { clicked, ...attempt } = await pressConsent(cdp, mainSession, consentRequest);
+    const { clicked, ...attempt } = await pressConsent(
+      cdp,
+      mainSession,
+      consentRequest,
+      LOCATE_BUDGET_MS,
+      // Set here rather than before the search: what the page did while the banner was
+      // being looked for is the page's own doing and must not be counted against the click.
+      async () => {
+        pressed = true;
+        beforeClick = pickCookies((await cdp.send("Storage.getCookies")).cookies);
+      }
+    );
     let after = null;
     if (clicked) {
-      await delay(consentRequest.plan.afterClickSettleMs);
+      sawActivity();
+      const { afterClickSettleMs } = consentRequest.plan;
+      const afterSettle = await settleUntilQuiet(
+        () => lastActivityAt,
+        () => requests,
+        probeCookies,
+        // As with the arrival settle: a plan asking for no wait after the click still gets none.
+        afterClickSettleMs <= 0 ? 0 : Math.max(afterClickSettleMs, MAX_AFTER_CLICK_SETTLE_MS),
+        CLICK_QUIET_MS,
+        afterClickSettleMs
+      );
       const settled = await cdp.send("Storage.getCookies");
-      after = { cookies: pickCookies(settled.cookies), thirdPartyHosts: [...hostsAfterClick] };
+      after = {
+        before: beforeClick ?? arrival.cookies,
+        cookies: pickCookies(settled.cookies),
+        thirdPartyHosts: [...hostsAfterClick],
+        settle: afterSettle
+      };
     }
     consent2 = { ...attempt, after };
   }
@@ -8837,6 +9035,7 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
     finalUrl: targetInfo.url,
     httpStatus,
     loadTimedOut,
+    settle,
     consent: consent2
   };
 };
@@ -9078,108 +9277,6 @@ var pageText = (raw) => {
   ];
   if (!chars.length) return null;
   return chars.length > MAX_PAGE_TEXT ? `${chars.slice(0, MAX_PAGE_TEXT - 1).join("")}\u2026` : chars.join("");
-};
-
-// src/plan.ts
-var PLAN_VERSION = 1;
-var RESULT_VERSION = 1;
-var UPDATE_HINT = "Update the plugin with /plugin marketplace update cookiepal, then restart Claude Code.";
-var MAX_SETTLE_MS = 1e4;
-var MAX_TIMEOUT_MS = 6e4;
-var MAX_AFTER_CLICK_SETTLE_MS = 1e4;
-var MATCHER = /^[A-Za-z0-9_\x2D]{1,64}$/;
-var MAX_MATCHERS = 64;
-var MAX_TEXT_LENGTH = 64;
-var isPlainText = (text) => [...text].every((char) => {
-  const point = char.codePointAt(0) ?? 0;
-  return point > 31 && point !== 127 && point !== 8232 && point !== 8233;
-});
-var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-var isRecord2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-var bounded = (value, max) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.min(Math.floor(value), max) : null;
-var parsePlan = (raw) => {
-  if (!isRecord2(raw)) return { ok: false, error: "The plan from plan_check is missing or not an object." };
-  if (raw.planVersion !== PLAN_VERSION) {
-    return {
-      ok: false,
-      error: `CookiePal sent a check plan (version ${String(raw.planVersion)}) this version of the plugin does not understand. ${UPDATE_HINT}`
-    };
-  }
-  const { checkId, expiresAt, ranFrom, target, load, limits, submit } = raw;
-  if (typeof expiresAt === "string" && Date.parse(expiresAt) <= Date.now()) {
-    return { ok: false, error: "This check plan has expired. Start the check again." };
-  }
-  if (typeof checkId !== "string" || !UUID.test(checkId)) {
-    return { ok: false, error: "The plan has no valid check ID." };
-  }
-  if (!isRecord2(submit) || submit.resultVersion !== RESULT_VERSION) {
-    return { ok: false, error: `The plan asks for a result version this plugin cannot send. ${UPDATE_HINT}` };
-  }
-  if (!isRecord2(target) || typeof target.page !== "string") return { ok: false, error: "The plan has no page." };
-  if (!isRecord2(load) || !isRecord2(limits)) return { ok: false, error: "The plan has no load settings or limits." };
-  const settleMs = bounded(load.settleMs, MAX_SETTLE_MS);
-  const timeoutMs = bounded(load.timeoutMs, MAX_TIMEOUT_MS);
-  if (settleMs === null || timeoutMs === null || timeoutMs === 0) {
-    return { ok: false, error: "The plan has invalid load settings." };
-  }
-  const keys = [
-    "maxCookies",
-    "maxCookieNameLength",
-    "maxCookieDomainLength",
-    "maxCookiePathLength",
-    "maxThirdPartyHosts",
-    "maxHostLength"
-  ];
-  const parsedLimits = {};
-  for (const key2 of keys) {
-    const value = bounded(limits[key2], 1e4);
-    if (value === null) return { ok: false, error: `The plan has no valid ${key2}.` };
-    parsedLimits[key2] = value;
-  }
-  const country = isRecord2(ranFrom) && typeof ranFrom.country === "string" ? ranFrom.country : null;
-  return {
-    ok: true,
-    plan: {
-      checkId,
-      country,
-      page: target.page,
-      settleMs,
-      timeoutMs,
-      limits: parsedLimits,
-      consent: parseConsent(raw.consent)
-    }
-  };
-};
-var identifiers = (value) => (Array.isArray(value) ? value : []).filter((entry) => typeof entry === "string" && MATCHER.test(entry)).slice(0, MAX_MATCHERS);
-var labels = (value) => (Array.isArray(value) ? value : []).filter(
-  (entry) => typeof entry === "string" && entry.length > 0 && entry.length <= MAX_TEXT_LENGTH && isPlainText(entry)
-).map((entry) => entry.toLowerCase()).slice(0, MAX_MATCHERS);
-var buttonMatchers = (value) => {
-  const raw = isRecord2(value) ? value : {};
-  return {
-    tags: identifiers(raw.tags),
-    ids: identifiers(raw.ids),
-    classes: identifiers(raw.classes),
-    texts: labels(raw.texts)
-  };
-};
-var anyMatcher = ({ tags, ids, classes, texts }) => tags.length + ids.length + classes.length + texts.length > 0;
-var parseConsent = (value) => {
-  if (!isRecord2(value) || value.action !== "accept-and-reject") return null;
-  const banner = isRecord2(value.banner) ? value.banner : {};
-  const accept = buttonMatchers(value.accept);
-  const reject = buttonMatchers(value.reject);
-  if (!anyMatcher(accept) && !anyMatcher(reject)) return null;
-  return {
-    afterClickSettleMs: bounded(value.afterClickSettleMs, MAX_AFTER_CLICK_SETTLE_MS) ?? 0,
-    banner: {
-      ids: identifiers(banner.ids),
-      classes: identifiers(banner.classes),
-      keywords: labels(banner.keywords)
-    },
-    accept,
-    reject
-  };
 };
 
 // src/report.ts
@@ -9424,7 +9521,7 @@ var buildConsentRun = (attempt, arrival, limits) => {
     const submitted = toSubmitted(cookie, limits);
     if (submitted) cookiesAfterClick.push(submitted);
   }
-  const before = new Set(arrival.cookies.map(key));
+  const before = new Set((attempt.after.before ?? arrival.cookies).map(key));
   const newAfterClick = cookiesAfterClick.filter((cookie) => !before.has(key(cookie)));
   const hostsAfterClick = [];
   for (const host of new Set(attempt.after.thirdPartyHosts.map((h) => h.toLowerCase()))) {
@@ -9740,6 +9837,11 @@ var consent = (answer, flag) => {
   if (!state) return { ok: false, error: STILL_STORED };
   return { ok: true, consent: { asked: state.asked, installId: state.installId } };
 };
+var underMeasured = (loads) => loads.some(
+  (load) => load !== null && // Strictly false: a plan that asked for no settle waited for nothing and so concluded
+  // nothing, which is not the same as a page that was still working when time ran out.
+  (load.settle.reachedQuiet === false || load.consent?.after?.settle.reachedQuiet === false)
+);
 var run = async (ref) => {
   if (!dataDir) return NO_DATA_DIR;
   sweep(dataDir);
@@ -9820,6 +9922,10 @@ var run = async (ref) => {
       ranFrom: plan.country,
       httpStatus: load.httpStatus,
       loadTimedOut: load.loadTimedOut,
+      settle: load.settle,
+      // True when any reading was taken while the page was still working, so what
+      // this check saw may be less than what the page eventually does.
+      underMeasured: underMeasured([load, consentRuns.accept, consentRuns.reject]),
       vendors: built.vendors,
       droppedCookies: built.droppedCookies,
       droppedHosts: built.droppedHosts,
@@ -9830,12 +9936,16 @@ var run = async (ref) => {
         accept: {
           pressed: consent2.accept.pressed,
           reason: consent2.accept.reason ?? null,
-          loadError: loadErrors.accept ?? null
+          loadError: loadErrors.accept ?? null,
+          settle: consentRuns.accept?.settle ?? null,
+          afterClickSettle: consentRuns.accept?.consent?.after?.settle ?? null
         },
         reject: {
           pressed: consent2.reject.pressed,
           reason: consent2.reject.reason ?? null,
-          loadError: loadErrors.reject ?? null
+          loadError: loadErrors.reject ?? null,
+          settle: consentRuns.reject?.settle ?? null,
+          afterClickSettle: consentRuns.reject?.consent?.after?.settle ?? null
         },
         vendors: {
           ...Object.fromEntries(consent2.accept.cookiesAfterClick.map((c) => [c.name, categorise(c.name).vendor])),
