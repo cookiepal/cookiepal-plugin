@@ -43,9 +43,9 @@ export interface Plan {
 
 // A plan tunes the load within these bounds. It cannot turn off the skill's own
 // rules (a fresh profile, no values, no links followed), which are not in it.
-const MAX_SETTLE_MS = 10_000;
+export const MAX_SETTLE_MS = 10_000;
 const MAX_TIMEOUT_MS = 60_000;
-const MAX_AFTER_CLICK_SETTLE_MS = 10_000;
+export const MAX_AFTER_CLICK_SETTLE_MS = 10_000;
 
 // What a matcher from the server may be. Not a CSS selector: no brackets,
 // quotes, colons, parentheses or whitespace, so a matcher can never become a

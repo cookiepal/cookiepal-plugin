@@ -139,6 +139,20 @@ const consent = (answer: string | undefined, flag: string | undefined): Output =
   return { ok: true, consent: { asked: state.asked, installId: state.installId } };
 };
 
+/**
+ * True when any of these loads stopped watching on its budget rather than because the
+ * page had gone quiet. The reading is then a floor rather than a count: everything it
+ * names was really there, but the page may have gone on to set more.
+ */
+const underMeasured = (loads: (PageLoad | null)[]): boolean =>
+  loads.some(
+    (load) =>
+      load !== null &&
+      // Strictly false: a plan that asked for no settle waited for nothing and so concluded
+      // nothing, which is not the same as a page that was still working when time ran out.
+      (load.settle.reachedQuiet === false || load.consent?.after?.settle.reachedQuiet === false),
+  );
+
 const run = async (ref: string | undefined): Promise<Output> => {
   if (!dataDir) return NO_DATA_DIR;
   sweep(dataDir);
@@ -239,6 +253,10 @@ const run = async (ref: string | undefined): Promise<Output> => {
       ranFrom: plan.country,
       httpStatus: load.httpStatus,
       loadTimedOut: load.loadTimedOut,
+      settle: load.settle,
+      // True when any reading was taken while the page was still working, so what
+      // this check saw may be less than what the page eventually does.
+      underMeasured: underMeasured([load, consentRuns.accept, consentRuns.reject]),
       vendors: built.vendors,
       droppedCookies: built.droppedCookies,
       droppedHosts: built.droppedHosts,
@@ -251,11 +269,15 @@ const run = async (ref: string | undefined): Promise<Output> => {
               pressed: consent.accept.pressed,
               reason: consent.accept.reason ?? null,
               loadError: loadErrors.accept ?? null,
+              settle: consentRuns.accept?.settle ?? null,
+              afterClickSettle: consentRuns.accept?.consent?.after?.settle ?? null,
             },
             reject: {
               pressed: consent.reject.pressed,
               reason: consent.reject.reason ?? null,
               loadError: loadErrors.reject ?? null,
+              settle: consentRuns.reject?.settle ?? null,
+              afterClickSettle: consentRuns.reject?.consent?.after?.settle ?? null,
             },
             vendors: {
               ...Object.fromEntries(consent.accept.cookiesAfterClick.map((c) => [c.name, categorise(c.name).vendor])),

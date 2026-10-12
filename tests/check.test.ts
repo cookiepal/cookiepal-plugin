@@ -487,6 +487,8 @@ describe('buildConsentRun', () => {
     ...extra,
   });
   const arrival = (cookies: CapturedCookie[] = [], thirdPartyHosts: string[] = []) => ({ cookies, thirdPartyHosts });
+  /** A settle that ended on its own: these cases are about what was read, not how long it took. */
+  const quiet = { ms: 0, reachedQuiet: true, requests: 0 };
   /** A pressed run that ended with `after`, as `loadPage` reports one. */
   const pressed = (after: { cookies: CapturedCookie[]; thirdPartyHosts: string[] }) => ({
     bannerFound: true,
@@ -495,7 +497,9 @@ describe('buildConsentRun', () => {
     matchedBy: 'id' as const,
     reason: null,
     label: 'Accept all',
-    after,
+    // Null, so these cases keep comparing against the arrival they pass in; a real run
+    // always carries the reading taken in the instant before the press.
+    after: { before: null, ...after, settle: quiet },
   });
   const names = (cookies: { name: string }[]) => cookies.map((c) => c.name).sort();
 
@@ -605,7 +609,12 @@ describe('buildConsent', () => {
     maxThirdPartyHosts: 10,
     maxHostLength: 253,
   };
-  const empty = { cookies: [], thirdPartyHosts: [] };
+  const empty = {
+    before: null,
+    cookies: [],
+    thirdPartyHosts: [],
+    settle: { ms: 0, reachedQuiet: true, requests: 0 },
+  };
   const attempt = (over: Record<string, unknown> = {}) => ({
     bannerFound: true,
     rejectByDefault: false,

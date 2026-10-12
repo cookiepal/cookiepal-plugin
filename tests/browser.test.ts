@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -38,12 +38,14 @@ interface Output {
     ranFrom: string | null;
     httpStatus: number | null;
     loadTimedOut: boolean;
+    settle: Settle;
+    underMeasured: boolean;
     consent: {
       tested: boolean;
       bannerFound: boolean;
       rejectByDefault: boolean;
-      accept: { pressed: boolean; reason: string | null };
-      reject: { pressed: boolean; reason: string | null };
+      accept: { pressed: boolean; reason: string | null; settle: Settle | null; afterClickSettle: Settle | null };
+      reject: { pressed: boolean; reason: string | null; settle: Settle | null; afterClickSettle: Settle | null };
     } | null;
   };
   pageContent: {
@@ -53,6 +55,12 @@ interface Output {
     acceptButton?: string | null;
     rejectButton?: string | null;
   };
+}
+
+interface Settle {
+  ms: number;
+  reachedQuiet: boolean;
+  requests: number;
 }
 
 interface ConsentRun {
@@ -192,6 +200,132 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
       `<div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>
        <div style="position:fixed;inset:0;z-index:99"></div>`,
     ),
+  }),
+
+  /* Pages about when a reading is taken, rather than what it finds. */
+
+  // Never stops asking for things, so the network never goes quiet.
+  '/beacon': () => ({
+    body: `<!doctype html><title>Beacon</title>
+      <script>setInterval(function () {
+        new Image().src = 'http://[::1]:${port}/pixel.gif?beacon=' + Date.now();
+      }, 150);</script>`,
+  }),
+  // Nothing to load and nothing to run: quiet from the moment it is parsed.
+  '/quiet': () => ({ body: '<!doctype html><title>Quiet</title><p>Nothing at all.</p>' }),
+  // Quiet immediately, but its banner is only put in the page later.
+  '/late-banner-inserted': () => ({
+    body: banner(
+      'late-inserted',
+      '<div id="late-holder"></div>',
+      undefined,
+      `setTimeout(function () {
+         document.getElementById('late-holder').innerHTML =
+           '<div id="onetrust-banner-sdk">${ONETRUST_BUTTONS.replace(/\n\s*/g, ' ')}</div>';
+       }, 2500);`,
+    ),
+  }),
+  // The banner is in the markup from the start and hidden by CSS until later. It is revealed by
+  // an animation, so nothing mutates the page when it appears and no script runs: a check
+  // watching the page's structure would see it settled and still find nothing it could press.
+  // `visibility` rather than `opacity`, because opacity does not inherit: a child of a
+  // transparent parent still computes to opacity 1, so the buttons would count as visible.
+  '/late-banner-faded': () => ({
+    body: `<!doctype html>
+      <title>late-faded</title>
+      <style>
+        @keyframes reveal { from { visibility: hidden; } to { visibility: visible; } }
+        #onetrust-banner-sdk { visibility: hidden; animation: reveal 1ms linear 2500ms forwards; }
+      </style>
+      <script>
+        document.cookie = '_ga=GA1.1.arrival; path=/; max-age=3600';
+        function fire(what) {
+          const img = document.createElement('img');
+          img.src = 'http://[::1]:${port}/pixel.gif?' + what;
+          document.body.appendChild(img);
+        }
+        function accept() {
+          document.cookie = '_gcl_au=accepted; path=/; max-age=3600';
+          fire('accept-tracker');
+        }
+        function reject() { document.cookie = '_ga=; path=/; max-age=0'; }
+      </script>
+      <img src="http://127.0.0.1:${port}/pixel.gif?arrival" alt="">
+      <div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`,
+  }),
+  // Accept fires its tracker well after the click, past a short quiet window.
+  // Loads, keeps mutating, and never shows a banner: the check looks, gives up and says so.
+  '/no-banner-at-all': () => ({
+    body: `<!doctype html><title>No banner</title>
+      <script>
+        document.cookie = '_ga=GA1.1.arrival; path=/; max-age=3600';
+        setInterval(function () { document.title = 'No banner ' + Date.now(); }, 100);
+      </script>
+      <img src="http://127.0.0.1:${port}/pixel.gif?arrival" alt="">
+      <p>Nothing to consent to.</p>`,
+  }),
+  // Its banner is only revealed long past any budget for looking, so it is never pressed.
+  '/never-shown-banner': () => ({
+    body: `<!doctype html>
+      <title>never-shown</title>
+      <style>
+        @keyframes reveal { from { visibility: hidden; } to { visibility: visible; } }
+        #onetrust-banner-sdk { visibility: hidden; animation: reveal 1ms linear 30000ms forwards; }
+      </style>
+      <script>
+        document.cookie = '_ga=GA1.1.arrival; path=/; max-age=3600';
+        function accept() { document.cookie = '_gcl_au=accepted; path=/; max-age=3600'; }
+        function reject() { document.cookie = '_ga=; path=/; max-age=0'; }
+      </script>
+      <img src="http://127.0.0.1:${port}/pixel.gif?arrival" alt="">
+      <div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`,
+  }),
+  // Goes quiet at once, then writes a cookie on a timer with no request behind it. Nothing
+  // in the protocol announces that, so only re-reading the cookies catches it.
+  '/late-cookie': () => ({
+    body: `<!doctype html><title>Late cookie</title>
+      <script>setTimeout(function () { document.cookie = 'late_write=1; path=/'; }, 600);</script>`,
+  }),
+  // Re-sets one cookie for ever with a later expiry. The same cookie is not news, so this
+  // must not be mistaken for the page still doing something.
+  '/refreshing-cookie': () => ({
+    body: `<!doctype html><title>Refreshing</title>
+      <script>setInterval(function () { document.cookie = 'kept=1; path=/; max-age=3600'; }, 200);</script>`,
+  }),
+  // Contacts one third party while its banner is still being looked for, and a different one
+  // when accept is pressed. Only the second was caused by the press.
+  '/late-banner-with-beacon': () => ({
+    body: `<!doctype html>
+      <title>late-beacon-banner</title>
+      <style>
+        @keyframes reveal { from { visibility: hidden; } to { visibility: visible; } }
+        #onetrust-banner-sdk { visibility: hidden; animation: reveal 1ms linear 2500ms forwards; }
+      </style>
+      <script>
+        document.cookie = '_ga=GA1.1.arrival; path=/; max-age=3600';
+        setTimeout(function () {
+          new Image().src = 'http://127.0.0.1:${port}/pixel.gif?while-looking';
+          document.cookie = 'set_while_looking=1; path=/';
+        }, 1200);
+        function accept() {
+          document.cookie = '_gcl_au=accepted; path=/; max-age=3600';
+          new Image().src = 'http://[::1]:${port}/pixel.gif?accept-tracker';
+        }
+        function reject() { document.cookie = '_ga=; path=/; max-age=0'; }
+      </script>
+      <div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`,
+  }),
+  '/late-beacon': () => ({
+    body: `<!doctype html><title>Late beacon</title>
+      <script>
+        document.cookie = '_ga=GA1.1.arrival; path=/; max-age=3600';
+        function accept() { setTimeout(function () {
+          new Image().src = 'http://[::1]:${port}/pixel.gif?late-accept';
+        }, 700); }
+        function reject() { document.cookie = '_ga=; path=/; max-age=0'; }
+      </script>
+      <img src="http://127.0.0.1:${port}/pixel.gif?arrival" alt="">
+      <div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`,
   }),
 };
 
@@ -500,6 +634,45 @@ describe('run', () => {
     noProfileLeft(temp);
   });
 
+  test('the browser is started without the savings that would blind the check', async () => {
+    // Each of these was measured and rejected, and the measurements are the reason they must
+    // not come back: a renderer cap and --process-per-site changed neither process count nor
+    // memory, and --single-process crashes the browser outright.
+    const dir = newTemp();
+    const argvFile = join(dir, 'argv.json');
+    const fakeBrowser = join(dir, 'fake-browser.mjs');
+    writeFileSync(
+      fakeBrowser,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));
+setTimeout(() => process.exit(1), 300);
+`,
+    );
+    chmodSync(fakeBrowser, 0o755);
+
+    const url = `http://localhost:${port}/clean`;
+    await runCheck(url, undefined, { COOKIEPAL_BROWSER: fakeBrowser });
+    const argv = JSON.parse(readFileSync(argvFile, 'utf8')) as string[];
+
+    // Measured too: a headless page is not throttled, so the flags that would unthrottle it
+    // earn nothing. A chain of 50ms timers ran at 16.3 a second with and without them.
+    assert.ok(!argv.includes('--disable-background-timer-throttling'), 'headless is not throttled');
+    // Cross-site frames have to keep running out of process, or they are never attached to and what
+    // they contact is never seen. That is also why there is no renderer cap here: measured with and
+    // without `--renderer-process-limit`, the same page ran 13 renderers either way, because site
+    // isolation gives a cross-site frame its own process whatever the limit says.
+    assert.ok(!argv.includes('--single-process'), 'frames must stay out of process to be measured');
+    assert.ok(!argv.some((flag) => flag.startsWith('--renderer-process-limit')), 'it would do nothing here');
+    assert.ok(!argv.includes('--process-per-site'), 'measured: no effect on either count');
+    // The one family that would genuinely cut the cost, by stopping cross-site frames running
+    // on their own — which is exactly what makes their requests visible to the check at all.
+    assert.ok(
+      !argv.some((flag) => /site-per-process|IsolateOrigins|site-isolation/i.test(flag)),
+      'cross-site frames must stay out of process to be measured',
+    );
+  });
+
   test('a page that cannot load fails cleanly and still deletes the profile', async () => {
     const closed = createServer();
     await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve));
@@ -761,6 +934,104 @@ describe('the plan_check guard', () => {
 });
 
 /**
+ * When a reading is taken. The plan's `settleMs` is a ceiling rather than a sleep,
+ * so a page that has finished is read as soon as it has finished and a page that is
+ * still working is still read at the moment the plan allowed. What the check reports
+ * then depends on what the page did, not on how fast the machine running it is.
+ */
+describe('when a reading is taken', () => {
+  const settling = (path: string, load: Record<string, unknown>) => {
+    const url = `http://localhost:${port}${path}`;
+    return runCheck(url, planFor(url, { load: { waitUntil: 'load', ...load } }));
+  };
+
+  test('a page that keeps asking for things is read at the ceiling, and says so', async () => {
+    const pixels = requestsFrom('/pixel.gif');
+    const { output } = await settling('/beacon', { settleMs: 3000, timeoutMs: 15_000 });
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.local.settle.reachedQuiet, false, 'the page never went quiet');
+    assert.equal(output.local.underMeasured, true, 'so the reading is reported as a floor');
+    assert.ok(output.local.settle.ms >= 2500, `waited the ceiling, got ${output.local.settle.ms}ms`);
+    assert.ok(pixels().length >= 10, `the page really kept beaconing, saw ${pixels().length}`);
+  });
+
+  test('a page that has finished still gets the whole settle the plan asked for', async () => {
+    // The plan's settle is the least this waits, never the most. A page that goes quiet
+    // immediately is still watched for the full time, so a cookie it sets on a timer with
+    // no request behind it is caught exactly as it was before.
+    const { output } = await settling('/quiet', { settleMs: 2000, timeoutMs: 15_000 });
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.local.settle.reachedQuiet, true, 'the page went quiet');
+    assert.equal(output.local.underMeasured, false);
+    assert.ok(output.local.settle.ms >= 2000, `waited the plan's settle, got ${output.local.settle.ms}ms`);
+  });
+
+  test('a request that never answers does not hold the settle open', async () => {
+    // Quiet means nothing new, not nothing in flight: one request left open would
+    // otherwise pin every page to the far cap and nothing would ever be read on time.
+    const { output } = await settling('/hang', { settleMs: 2000, timeoutMs: 1500 });
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.local.loadTimedOut, true, 'the load event never fired');
+    assert.equal(output.local.settle.reachedQuiet, true, 'but the page had stopped asking for things');
+    assert.ok(output.local.settle.ms < 6000, `so it was not followed to the cap, got ${output.local.settle.ms}ms`);
+    assert.deepEqual(
+      output.submit.cookies.map((cookie) => cookie.name),
+      ['before_hang'],
+      'and what it had set before hanging is still reported',
+    );
+  });
+
+  test('a cookie written on a timer with no request behind it is still caught', async () => {
+    // Nothing announces a `document.cookie` write, and this page is network-quiet from the
+    // moment it parses, so only re-reading the cookies notices it. The write lands inside the
+    // quiet window and pushes it out, so the settle runs well past where silence alone would
+    // have ended it. A write after the window has already closed is gone, which is why the
+    // plan's settle stays the floor rather than becoming the whole wait.
+    const { output } = await settling('/late-cookie', { settleMs: 300, timeoutMs: 15_000 });
+    assert.equal(output.ok, true, output.error);
+
+    assert.ok(
+      output.submit.cookies.some((cookie) => cookie.name === 'late_write'),
+      `the late write was seen, got ${JSON.stringify(output.submit.cookies.map((c) => c.name))}`,
+    );
+    assert.ok(output.local.settle.ms > 1400, `the write pushed the window out, got ${output.local.settle.ms}ms`);
+  });
+
+  test('the same cookie set again is not mistaken for the page doing something new', async () => {
+    // Re-set every 200ms with a later expiry. Counted by identity that is one cookie and no
+    // news, so the settle ends rather than being held open for ever by a page at rest.
+    const { output } = await settling('/refreshing-cookie', { settleMs: 300, timeoutMs: 15_000 });
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.local.settle.reachedQuiet, true, 'the page counted as settled');
+    assert.ok(output.local.settle.ms < 4000, `and was not held to the cap, got ${output.local.settle.ms}ms`);
+  });
+
+  test('a plan asking for no settle still gets none', async () => {
+    const { output } = await settling('/analytics', { settleMs: 0, timeoutMs: 15_000 });
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.local.settle.ms, 0, 'nothing was waited');
+    assert.equal(output.local.settle.reachedQuiet, null, 'and nothing was concluded about the page');
+    assert.equal(output.local.underMeasured, false, 'so the read is not told the counts may be short');
+  });
+
+  test("a page that is still working is followed past the plan's settle", async () => {
+    // The fix this all exists for: a page still loading when the plan's time is up is given
+    // longer, rather than read there and reported as though that were the whole of it.
+    const { output } = await settling('/beacon', { settleMs: 1000, timeoutMs: 15_000 });
+    assert.equal(output.ok, true, output.error);
+
+    assert.ok(output.local.settle.ms > 2000, `followed well past 1000ms, got ${output.local.settle.ms}ms`);
+    assert.equal(output.local.settle.reachedQuiet, false, 'it never did stop');
+    assert.equal(output.local.underMeasured, true, 'so the reading says it may be short');
+  });
+});
+
+/**
  * The consent action. The plan carries the matchers, so each test here also
  * shows that changing them on the server changes what the check presses.
  */
@@ -909,6 +1180,104 @@ describe('the consent action', () => {
     assert.equal(consent?.accept.pressed, false);
     assert.equal(consent?.accept.reason, 'ambiguous-button');
     assert.equal(consent?.reject.pressed, true);
+  });
+
+  /** A banner this page only shows later, with the budget the plan allows for it. */
+  const late = (path: string, settleMs: number, afterClickSettleMs = 400) => {
+    const url = `http://localhost:${port}${path}`;
+    return runCheck(
+      url,
+      planFor(url, {
+        load: { waitUntil: 'load', settleMs, timeoutMs: 15_000 },
+        consent: { ...MATCHERS, afterClickSettleMs },
+      }),
+    );
+  };
+
+  test('a banner put in the page long after it goes quiet is still found and pressed', async () => {
+    // Quiet almost at once and a settle of 300ms, so the settle is long over before the
+    // banner exists at 2500ms. Only looking again finds it: without that this reports a
+    // site as having no banner at all, which is a finding against it.
+    const { output } = await late('/late-banner-inserted', 300);
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.local.settle.reachedQuiet, true, 'the page itself had gone quiet');
+    assert.equal(output.submit.consent?.bannerFound, true, 'and the banner was still waited for');
+    assert.equal(output.submit.consent?.accept.pressed, true);
+  });
+
+  test('a banner that only fades in is still found and pressed', async () => {
+    // Revealing it changes no nodes at all, so there is nothing for a check watching the
+    // page's structure to notice. Looking for the button again is what finds it.
+    const { output } = await late('/late-banner-faded', 300);
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.submit.consent?.bannerFound, true);
+    assert.equal(output.submit.consent?.accept.pressed, true, 'the button was visible by the time it was pressed');
+  });
+
+  test('looking for a banner is bounded, so one that never shows is not waited on for ever', async () => {
+    // Revealed well past the budget: the check gives up and says which, rather than hanging
+    // on a page that may simply have no banner.
+    const started = Date.now();
+    const { output } = await late('/never-shown-banner', 300);
+    const elapsed = Date.now() - started;
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.submit.consent?.accept.pressed, false);
+    assert.ok(
+      ['no-banner', 'no-button'].includes(output.submit.consent?.accept.reason ?? ''),
+      `gave up for a stated reason, got ${output.submit.consent?.accept.reason}`,
+    );
+    // Three loads, each bounded by its own settle and look; nowhere near the outer stop.
+    assert.ok(elapsed < 30_000, `bounded rather than open-ended, took ${elapsed}ms`);
+  });
+
+  test('a banner that never arrives is given up on rather than waited for forever', async () => {
+    const { output } = await late('/no-banner-at-all', 300);
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.submit.consent?.accept.pressed, false);
+    assert.equal(output.submit.consent?.bannerFound, false);
+    assert.equal(output.submit.consent?.accept.reason, 'no-banner');
+  });
+
+  test('what the page did while its banner was being looked for is not blamed on the press', async () => {
+    // The banner only shows at 2500ms, so the check spends over a second looking for it.
+    // Anything the page does in that window is its own doing: counting it as caused by the
+    // press would report a site as still tracking after reject when it had not been pressed.
+    const { output } = await late('/late-banner-with-beacon', 300, 2000);
+    assert.equal(output.ok, true, output.error);
+
+    const accept = output.submit.consent?.accept;
+    assert.equal(
+      accept?.pressed,
+      true,
+      `the late banner was still found and pressed: ${JSON.stringify(output.local.consent)} settle=${JSON.stringify(output.local.settle)}`,
+    );
+    assert.ok(accept?.hostsAfterClick.includes('[::1]'), 'the press own tracker is counted');
+    assert.ok(
+      !accept?.hostsAfterClick.includes('127.0.0.1'),
+      `the pre-press beacon is not, got ${JSON.stringify(accept?.hostsAfterClick)}`,
+    );
+    assert.ok(
+      !accept?.newAfterClick.some((cookie) => cookie.name === 'set_while_looking'),
+      `nor the cookie it set, got ${JSON.stringify(accept?.newAfterClick.map((c) => c.name))}`,
+    );
+  });
+
+  test('a tracker that fires late after the click is still counted', async () => {
+    // 700ms after the press: past a short quiet window, so the window after a click is
+    // longer than the one before it. This reading is what the findings rest on.
+    const { output } = await late('/late-beacon', 1000, 3000);
+    assert.equal(output.ok, true, output.error);
+
+    assert.equal(output.submit.consent?.accept.pressed, true);
+    assert.ok(
+      output.submit.consent?.accept.hostsAfterClick.includes('[::1]'),
+      `the late tracker was seen, got ${JSON.stringify(output.submit.consent?.accept.hostsAfterClick)}`,
+    );
+    assert.equal(output.local.consent?.accept.afterClickSettle?.reachedQuiet, true, 'and it was waited out, not cut');
   });
 
   test('AC6: matchers changed in the plan change what the next check presses, with no new plugin', async () => {

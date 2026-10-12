@@ -10,7 +10,7 @@ import {
   type MatchedBy,
   parseLocated,
 } from './banner.ts';
-import type { ButtonMatchers, ConsentPlan } from './plan.ts';
+import { type ButtonMatchers, type ConsentPlan, MAX_AFTER_CLICK_SETTLE_MS, MAX_SETTLE_MS } from './plan.ts';
 import type { CapturedCookie } from './result.ts';
 
 /** A failure worth showing the user as it is. */
@@ -125,6 +125,106 @@ const connect = (toBrowser: Writable, fromBrowser: Readable) => {
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms).unref());
 
+/**
+ * How long the network must be silent before the page counts as settled.
+ *
+ * Not lower: an advertising-heavy page goes quiet for several hundred milliseconds
+ * between bursts without being anywhere near finished, and a shorter window reads
+ * one of those gaps as the end of the page. Measured against a news front page, half
+ * a second found eleven cookies and eight third-party hosts where the page really had
+ * sixteen and nineteen — and, worse, reported that reading as a settled one.
+ */
+const QUIET_MS = 1000;
+/**
+ * The same, after a consent button was pressed. Longer because this reading is
+ * what the findings rest on: a tracker that beacons in a chain after the click
+ * keeps resetting the window, so the chain is followed rather than cut short.
+ */
+const CLICK_QUIET_MS = 2000;
+/** How often the banner is looked for again while it may still be appearing. */
+const LOCATE_POLL_MS = 100;
+/** How long a banner that has not appeared yet is waited for before giving up on it. */
+const LOCATE_BUDGET_MS = 2000;
+/** How often a settling page is re-read for cookies it set without asking for anything. */
+const PROBE_MS = 250;
+/*
+ * How far past the plan's settle a page that is still working may be followed: the
+ * plugin's own caps, imported rather than restated so they cannot drift apart.
+ *
+ * The plan's settle is the floor, not the budget. Everything the old fixed sleep caught
+ * is still caught, because the wait is never shorter than it; what it is no longer is
+ * the end, since a page still loading when it runs out keeps being watched up to the
+ * cap. That is the whole fix: the reading ends when the page stops, and a slower machine
+ * is given time to finish rather than quietly reported as a cleaner site.
+ */
+
+/** How a settle ended. */
+export interface Settle {
+  /** How long the settle actually took. */
+  ms: number;
+  /**
+   * True when the network went quiet, false when the time ran out first and the page may
+   * still have been working, null when the plan asked for no settle and nothing was waited.
+   */
+  reachedQuiet: boolean | null;
+  /** Requests seen during this settle alone, first- and third-party. */
+  requests: number;
+}
+
+/**
+ * Waits for the page to stop making requests: never less than `floorMs`, never more
+ * than `ceilingMs`.
+ *
+ * The plan's settle is the floor. A page is always given at least as long as it used
+ * to get, so a cookie written on a timer with nothing else happening is still caught;
+ * and a page that is still working when that time is up is followed further instead of
+ * being cut off there. That is what makes the reading depend on what the page did
+ * rather than on how fast the machine running it is.
+ *
+ * Quiet means no new activity, not zero requests in flight. A page holding one
+ * request open — a long poll, an EventSource, a request that never answers — would
+ * otherwise pin every settle to its ceiling and nothing would ever be read early.
+ *
+ * Setting a cookie counts as activity too, which is what `probe` is for. A script
+ * that waits and then writes one with `document.cookie` makes no request at all,
+ * and nothing in the protocol announces it, so the caller re-reads the cookies each
+ * time round and marks activity when they change. Without that, a page quiet at one
+ * second that sets a cookie at three would have that cookie missed and the reading
+ * still called settled — the very thing this is here to prevent.
+ */
+const settleUntilQuiet = async (
+  activity: () => number,
+  requests: () => number,
+  probe: () => Promise<void>,
+  ceilingMs: number,
+  quietMs: number,
+  floorMs: number,
+): Promise<Settle> => {
+  // Null rather than false: nothing was waited for, so nothing was concluded either way.
+  if (ceilingMs <= 0) return { ms: 0, reachedQuiet: null, requests: 0 };
+
+  const start = Date.now();
+  const before = requests();
+  const since = () => requests() - before;
+  const deadline = start + ceilingMs;
+  // A plan with a short settle could never see a full quiet window, which would
+  // leave it waiting the whole ceiling every time. Its own budget is the limit.
+  const quiet = Math.min(quietMs, ceilingMs);
+
+  for (;;) {
+    const now = Date.now();
+    // Whichever is further off: the rest of the quiet window, or the rest of the floor.
+    const waitFor = Math.max(quiet - (now - activity()), floorMs - (now - start));
+    // Asked before the deadline, not after: when a plan asks for the longest settle the
+    // cap allows, the floor and the cap are the same moment, and a page that really had
+    // gone quiet would otherwise be reported as one that ran out of time.
+    if (waitFor <= 0) return { ms: now - start, reachedQuiet: true, requests: since() };
+    if (now >= deadline) return { ms: now - start, reachedQuiet: false, requests: since() };
+    await delay(Math.min(waitFor, deadline - now, PROBE_MS));
+    await probe();
+  }
+};
+
 const withTimeout = <T>(promise: Promise<T>, ms: number, message: string): Promise<T> =>
   Promise.race([
     promise,
@@ -164,8 +264,17 @@ export interface ConsentAttempt {
   reason: ConsentSkipReason | null;
   /** The button's own label. Page content; it is cleaned before anyone sees it. */
   label: string | null;
-  /** What the page had after the click. Null when nothing was pressed. */
-  after: { cookies: CapturedCookie[]; thirdPartyHosts: string[] } | null;
+  /**
+   * What the page had the instant before the click, and what it had after. Null when
+   * nothing was pressed. `before` is what `newAfterClick` is counted against, so a cookie
+   * the page set while its banner was still being looked for is not read as the press's.
+   */
+  after: {
+    before: CapturedCookie[] | null;
+    cookies: CapturedCookie[];
+    thirdPartyHosts: string[];
+    settle: Settle;
+  } | null;
 }
 
 export interface PageLoad {
@@ -175,6 +284,8 @@ export interface PageLoad {
   finalUrl: unknown;
   httpStatus: number | null;
   loadTimedOut: boolean;
+  /** How the settle before the arrival reading ended. */
+  settle: Settle;
   /** Null when this load was the arrival reading and pressed nothing. */
   consent: ConsentAttempt | null;
 }
@@ -254,6 +365,12 @@ export const loadPage = async ({ browserPath, url, settleMs, timeoutMs, consent 
         '--use-mock-keychain',
         '--mute-audio',
         '--window-size=1280,800',
+        // Nothing here tries to make the browser cheaper. Measured on a news front page, a renderer
+        // cap and `--process-per-site` changed neither the process count nor the memory, turning off
+        // site isolation changed neither, and `--single-process` crashes outright. A blank page
+        // already costs around 450 MB across ten processes, so most of it is the browser existing
+        // rather than the site being checked. Flags that would genuinely cut it are the ones that
+        // stop cross-site frames running on their own, which is exactly what the check measures.
         'about:blank',
       ],
       { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] },
@@ -269,10 +386,14 @@ export const loadPage = async ({ browserPath, url, settleMs, timeoutMs, consent 
     const cdp = connect(chrome.stdio[3] as Writable, chrome.stdio[4] as Readable);
     const run = capture(cdp, url, settleMs, timeoutMs, consent);
     // Past the plan's own budget (timeoutMs to load, then settleMs, then the consent click), something
-    // is stuck: give up rather than hang.
+    // is stuck: give up rather than hang. Each settle is counted at its own cap rather than at
+    // what the plan asked for, since a page still working past that is followed up to the cap.
     return await withTimeout(
       Promise.race([run, started, closed]),
-      timeoutMs + settleMs + (consent ? consent.plan.afterClickSettleMs + 10_000 : 0) + 20_000,
+      timeoutMs +
+        Math.max(settleMs, MAX_SETTLE_MS) +
+        (consent ? LOCATE_BUDGET_MS + Math.max(consent.plan.afterClickSettleMs, MAX_SETTLE_MS) + 10_000 : 0) +
+        20_000,
       'The check took too long and was stopped.',
     ).finally(async () => {
       await withTimeout(cdp.send('Browser.close'), 3000, 'close').catch(() => {});
@@ -325,13 +446,37 @@ const evaluate = async (cdp: Cdp, sessionId: string, expression: string): Promis
  * itself does: a page claiming `rejectByDefault` still gets its reject button
  * pressed, because that claim is the page's own and the point of the check is
  * to measure the button rather than take the page's word for it.
+ *
+ * The button is looked for repeatedly until `budgetMs` runs out, because a banner is
+ * often still fading in when the page itself has gone quiet, and a banner at `opacity: 0`
+ * is not something the check can press. That window is the check's own and comes after
+ * the settle has already run its floor, so a page that is simply slower is not read as a
+ * page without a banner.
+ *
+ * `onPress` is called once, in the instant before the button is pressed, and never when
+ * nothing is pressed. Everything the page does from then on is the press's doing — which
+ * is the whole reject finding — so it must not start while the banner is merely being
+ * looked for: requests made during that search are the page's own, not the click's.
  */
 const pressConsent = async (
   cdp: Cdp,
   sessionId: string,
   request: ConsentRequest,
+  budgetMs: number,
+  onPress: () => Promise<void>,
 ): Promise<Omit<ConsentAttempt, 'after'> & { clicked: boolean }> => {
-  const located = parseLocated(await evaluate(cdp, sessionId, locateExpression(request.plan, request.matchers)));
+  const expression = locateExpression(request.plan, request.matchers);
+  const deadline = Date.now() + budgetMs;
+  let located = parseLocated(await evaluate(cdp, sessionId, expression));
+  // Only while the banner or its button may still be arriving. An ambiguous match is a
+  // settled answer — more than one button claims to be the one — so looking again would
+  // only make which answer wins depend on timing.
+  while (!located.point && (located.reason === 'no-banner' || located.reason === 'no-button')) {
+    if (Date.now() + LOCATE_POLL_MS >= deadline) break;
+    await delay(LOCATE_POLL_MS);
+    located = parseLocated(await evaluate(cdp, sessionId, expression));
+  }
+
   const base = {
     bannerFound: located.bannerFound,
     rejectByDefault: located.rejectByDefault,
@@ -344,6 +489,7 @@ const pressConsent = async (
   }
 
   const { x, y } = located.point;
+  await onPress();
   let clicked = false;
   if (located.covered) {
     // Something sits over the button, so a mouse click would land on that instead.
@@ -382,6 +528,38 @@ const capture = async (
    * only place that information exists.
    */
   const hostsAfterClick = new Set<string>();
+  /**
+   * When the page was last seen doing something on the network, and how much it has
+   * done. The settles below wait on these rather than on the clock alone.
+   */
+  let lastActivityAt = Date.now();
+  let requests = 0;
+  const sawActivity = () => {
+    lastActivityAt = Date.now();
+  };
+
+  /**
+   * Which cookies exist, by identity rather than by value: a cookie re-set with a
+   * later expiry is the same cookie and is not the page doing something new.
+   */
+  /** What the page had the instant before the button was pressed; null when nothing was. */
+  let beforeClick: CapturedCookie[] | null = null;
+  let cookieFingerprint = '';
+  const probeCookies = async () => {
+    try {
+      const { cookies } = (await cdp.send('Storage.getCookies')) as { cookies: CapturedCookie[] };
+      const current = cookies
+        .map(({ name, domain, path }) => `${name}\u0000${domain}\u0000${path}`)
+        .sort()
+        .join('\u0001');
+      if (current !== cookieFingerprint) {
+        cookieFingerprint = current;
+        sawActivity();
+      }
+    } catch {
+      // A browser that has gone is handled by the stops around this; nothing to mark.
+    }
+  };
   let pressed = false;
   let mainSession = '';
   let mainFrame = '';
@@ -396,6 +574,10 @@ const capture = async (
   cdp.on(({ method, params = {}, sessionId }) => {
     switch (method) {
       case 'Network.requestWillBeSent': {
+        // Counted before the host filtering below: a first-party request is not something
+        // the check reports, but it is still the page working rather than being finished.
+        sawActivity();
+        requests++;
         const request = params.request as { url: string };
         try {
           const { protocol, hostname } = new URL(request.url);
@@ -410,7 +592,13 @@ const capture = async (
         break;
       }
       case 'Network.responseReceived':
+        sawActivity();
         if (params.requestId === documentRequest) httpStatus = (params.response as { status: number }).status;
+        break;
+      // An answer arriving is the page still working: it is usually what starts the next request.
+      case 'Network.loadingFinished':
+      case 'Network.loadingFailed':
+        sawActivity();
         break;
       case 'Page.loadEventFired':
         if (sessionId === mainSession && navigating) onLoad();
@@ -470,7 +658,19 @@ const capture = async (
     Math.max(0, deadline - Date.now()),
     'load',
   ).catch(() => true);
-  await delay(settleMs);
+  // Seeded before the wait so the first probe compares against what the page had on load,
+  // not against nothing, which would read every page as having just changed.
+  await probeCookies();
+  const settle = await settleUntilQuiet(
+    () => lastActivityAt,
+    () => requests,
+    probeCookies,
+    // A plan asking for no settle is asking for no wait, and still gets none. Otherwise the
+    // plan's figure is the least this waits, and a page still working is followed past it.
+    settleMs <= 0 ? 0 : Math.max(settleMs, MAX_SETTLE_MS),
+    QUIET_MS,
+    settleMs,
+  );
 
   const { cookies } = (await cdp.send('Storage.getCookies')) as { cookies: CapturedCookie[] };
   // The arrival reading, taken before anything is pressed. Each consent run compares against
@@ -482,15 +682,44 @@ const capture = async (
     // Set before the press, not after: requests the click causes start arriving
     // while `pressConsent` is still awaiting, and those are exactly the ones
     // being counted.
-    pressed = true;
-    const { clicked, ...attempt } = await pressConsent(cdp, mainSession, consentRequest);
+    // The banner gets its own window rather than the settle's leftovers: the settle now
+    // runs at least as long as the plan asked for, so there are none to pass on.
+    const { clicked, ...attempt } = await pressConsent(
+      cdp,
+      mainSession,
+      consentRequest,
+      LOCATE_BUDGET_MS,
+      // Set here rather than before the search: what the page did while the banner was
+      // being looked for is the page's own doing and must not be counted against the click.
+      async () => {
+        pressed = true;
+        beforeClick = pickCookies(((await cdp.send('Storage.getCookies')) as { cookies: CapturedCookie[] }).cookies);
+      },
+    );
     let after: ConsentAttempt['after'] = null;
     if (clicked) {
-      await delay(consentRequest.plan.afterClickSettleMs);
+      // The click itself starts the quiet window: whatever it sets off has not been sent yet,
+      // so the page would otherwise look quiet in the instant before its first request.
+      sawActivity();
+      const { afterClickSettleMs } = consentRequest.plan;
+      const afterSettle = await settleUntilQuiet(
+        () => lastActivityAt,
+        () => requests,
+        probeCookies,
+        // As with the arrival settle: a plan asking for no wait after the click still gets none.
+        afterClickSettleMs <= 0 ? 0 : Math.max(afterClickSettleMs, MAX_AFTER_CLICK_SETTLE_MS),
+        CLICK_QUIET_MS,
+        afterClickSettleMs,
+      );
       const settled = (await cdp.send('Storage.getCookies')) as { cookies: CapturedCookie[] };
       // Absolute: every cookie still set, and only the hosts contacted since
       // the press. The server counts these rather than reconstructing them.
-      after = { cookies: pickCookies(settled.cookies), thirdPartyHosts: [...hostsAfterClick] };
+      after = {
+        before: beforeClick ?? arrival.cookies,
+        cookies: pickCookies(settled.cookies),
+        thirdPartyHosts: [...hostsAfterClick],
+        settle: afterSettle,
+      };
     }
     consent = { ...attempt, after };
   }
@@ -505,6 +734,7 @@ const capture = async (
     finalUrl: targetInfo.url,
     httpStatus,
     loadTimedOut,
+    settle,
     consent,
   };
 };

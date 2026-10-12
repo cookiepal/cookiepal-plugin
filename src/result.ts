@@ -117,8 +117,9 @@ const NOT_PRESSED = (reason: ConsentSkipReason): SubmittedConsentRun => ({
  * arrival, so the surviving count moved between runs on one site, and a tracker
  * that ran from arrival through reject could not appear at all.
  *
- * `arrival` is this run's own reading, used only for `newAfterClick`: comparing
- * against it is safe because both come from the same page load.
+ * `arrival` is this run's own reading. It is the fallback for `newAfterClick`, which is
+ * otherwise counted against the reading taken in the instant before the press; both come
+ * from the same page load, so either comparison is safe.
  */
 export const buildConsentRun = (
   attempt: ConsentAttempt | null,
@@ -137,8 +138,10 @@ export const buildConsentRun = (
     if (submitted) cookiesAfterClick.push(submitted);
   }
 
-  // Against this run's own arrival, so "the press set this" means exactly that.
-  const before = new Set(arrival.cookies.map(key));
+  // Against what the page had the instant before the press, so "the press set this" means
+  // exactly that: a cookie the page set on its own while its banner was still being looked
+  // for belongs to the page, not to the button. Falls back to the run's own arrival.
+  const before = new Set((attempt.after.before ?? arrival.cookies).map(key));
   const newAfterClick = cookiesAfterClick.filter((cookie) => !before.has(key(cookie)));
 
   const hostsAfterClick: string[] = [];
