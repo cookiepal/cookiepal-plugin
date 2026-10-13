@@ -68,6 +68,7 @@ interface ConsentRun {
   reason?: string;
   matchedBy?: string;
   cookiesAfterClick: { name: string; category: string }[];
+  newAfterClick: { name: string; category: string }[];
   hostsAfterClick: string[];
 }
 
