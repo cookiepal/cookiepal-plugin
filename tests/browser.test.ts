@@ -625,11 +625,15 @@ describe('install ID consent through the CLI', () => {
     ['a content block', { content: [{ type: 'text', text: '{"deleted":2,"remaining":0}' }] }],
     ['a plain string', '{"deleted":0,"remaining":0}'],
   ] as [string, unknown][]) {
-    test(`the forget_install hook opens the gate for a complete erasure in ${name}`, async () => {
+    test(`the forget_install hook opens the gate after two complete erasures in ${name}`, async () => {
       const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
       const installId = await sharedWith(env);
+      const payload = JSON.stringify({ tool_input: { installId }, tool_response: response });
 
-      await cli(['save-forgotten'], JSON.stringify({ tool_input: { installId }, tool_response: response }), env);
+      await cli(['save-forgotten'], payload, env);
+      assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
+
+      await cli(['save-forgotten'], payload, env);
       const allowed = (await cli(['consent', 'decline'], '', env)).output;
 
       assert.equal(allowed.ok, true);
@@ -647,6 +651,7 @@ describe('install ID consent through the CLI', () => {
       tool_response: { isError: false, structuredContent: { deleted: 1, remaining: 0 } },
     });
 
+    await cli(['save-forgotten'], payload, env);
     await cli(['save-forgotten'], payload, env);
     await cli(['prepare'], 'https://example.com', env);
 
