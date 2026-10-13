@@ -1,7 +1,7 @@
 {
   "name": "cookiepal",
   "version": "0.4.0",
-  "description": "Check any page for cookies and trackers that fire before consent, and for what its banner's accept and reject buttons actually do, from Claude Code. No account needed.",
+  "description": "Check any page for cookies and trackers that fire before consent, and for what its banner's accept and reject buttons actually do, from Claude Code. No account needed to check; connect one to use CookiePal on your own site.",
   "author": {
     "name": "CookiePal",
     "url": "https://cookiepal.io"
