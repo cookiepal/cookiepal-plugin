@@ -123,8 +123,9 @@ const output = (mode: string | undefined): Output => {
 };
 
 export const STILL_STORED =
-  'This machine still has an install ID whose stored checks have not been erased. Run the ' +
-  "cookiepal server's forget_install with it first. To stop sending it anyway, leaving those " +
+  'This machine still has an install ID whose stored checks have not been erased twice. Run the ' +
+  "cookiepal server's forget_install with it until two runs have reported nothing remaining: the " +
+  'second catches a check the first could not see yet. To stop sending it anyway, leaving those ' +
   'checks to expire on their own, run "consent decline --anyway".';
 
 const consent = (answer: string | undefined, flag: string | undefined): Output => {
