@@ -155,7 +155,7 @@ Only what it takes to count checks and store the result:
 - the **country** the check ran from, worked out from your IP address, which is **not stored**;
 - a **random install ID**, only if you agreed to share one.
 
-If you connect a CookiePal account with `/cookiepal:connect`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without a recorded answer, and before a yes is sent Claude Code asks you to confirm it in its own permission dialog. Answering no on a later connect removes a link you made before.
+If you connect a CookiePal account with `/cookiepal:connect`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without an answer recorded on this machine, and in Claude Code's default permission mode it asks you to confirm a yes in its own dialog before the ID is sent. That dialog is skipped in bypass-permissions mode, and the hook does not run when hooks are turned off. Answering no on a later connect removes a link you made before.
 
 One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check stop-sharing` sends the install ID once more, on its own, so the checks stored under it can be erased. Nothing else accompanies it.
 

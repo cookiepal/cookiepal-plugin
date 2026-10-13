@@ -46,7 +46,7 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 | `skills/connect-account/SKILL.md` | The skill it follows: connecting a CookiePal account, and the separate question of linking the install ID to it |
 | `src/` | The local check: browser control, cookie capture, banner matching, categorisation, the risk read and its rendered forms |
 | `src/laws.ts` | The curated legal wording |
-| `hooks/hooks.json` | Hooks that keep query strings off `plan_check`, keep the install ID off `connect_account` without a recorded answer to linking it (and have Claude Code confirm a yes with the user), and hand each plan and result to the local check |
+| `hooks/hooks.json` | Hooks that keep query strings off `plan_check`, keep the install ID off `connect_account` without a recorded answer to linking it (and ask Claude Code to confirm a yes with the user, which bypass-permissions mode skips), and hand each plan and result to the local check |
 | `tests/` | Unit tests and browser tests against a local server |
 | `.claude-plugin/` | The plugin and marketplace manifests |
 
