@@ -435,8 +435,9 @@ export const CONNECT_GUARD_REASON =
 
 /** Shown by Claude Code's own permission dialog, so the yes to linking comes from the user. */
 export const CONNECT_ASK_REASON =
-  'Link your shared CookiePal install ID to the account you are connecting? It lets CookiePal see ' +
-  "that this install's checks led to an account. Deny to connect without linking it.";
+  'This links your shared CookiePal install ID to the account being connected, so the checks run ' +
+  'under it are associated with that account. Allow only if you agreed to link it. If this is denied, ' +
+  'connect without the install ID: nothing is linked or unlinked.';
 
 /** The PreToolUse hook on connect_account. Fails closed: unreadable input is refused. */
 const guardConnect = async () => {

@@ -9108,6 +9108,7 @@ var LINK_ANSWER_TTL_MS = 30 * 6e4;
 var recordLinkAnswer = (dataDir2, link, now = Date.now()) => {
   const { installId } = readConsent(dataDir2);
   if (!installId) return null;
+  if (link) clearForgotten(dataDir2, installId);
   const answer = { installId, link, at: now };
   mkdirSync(dataDir2, { recursive: true });
   writeFileSync(join2(dataDir2, LINK_ANSWER), `${JSON.stringify(answer)}
@@ -10083,7 +10084,7 @@ var decide = (permissionDecision, reason) => {
 };
 var deny = (reason = GUARD_REASON) => decide("deny", reason);
 var CONNECT_GUARD_REASON = "connect_account takes the install ID only with the user's own answer to linking it, recorded on this machine in the last half hour. Ask the user the link question again (agreeing to share the ID is not agreeing to link it), then send the ID with linkInstall set to their answer.";
-var CONNECT_ASK_REASON = "Link your shared CookiePal install ID to the account you are connecting? It lets CookiePal see that this install's checks led to an account. Deny to connect without linking it.";
+var CONNECT_ASK_REASON = "This links your shared CookiePal install ID to the account being connected, so the checks run under it are associated with that account. Allow only if you agreed to link it. If this is denied, connect without the install ID: nothing is linked or unlinked.";
 var guardConnect = async () => {
   let input;
   try {

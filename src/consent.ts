@@ -146,6 +146,9 @@ export interface LinkAnswer {
 export const recordLinkAnswer = (dataDir: string, link: boolean, now = Date.now()): LinkAnswer | null => {
   const { installId } = readConsent(dataDir);
   if (!installId) return null;
+  // A yes is about to put server state under the ID again, as `prepare` does,
+  // so an erasure recorded before it no longer covers everything stored.
+  if (link) clearForgotten(dataDir, installId);
   const answer = { installId, link, at: now };
   mkdirSync(dataDir, { recursive: true });
   writeFileSync(join(dataDir, LINK_ANSWER), `${JSON.stringify(answer)}\n`, { mode: 0o600 });

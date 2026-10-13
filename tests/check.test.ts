@@ -417,6 +417,21 @@ describe('install ID consent', () => {
     assert.deepEqual(readLinkAnswer(dir, now), { installId, link: false, at: now });
   });
 
+  // A yes puts server state under the ID again, so an earlier erasure no longer
+  // counts towards deleting it: the stop-sharing gate has to start over.
+  test('a yes to linking resets the erasures recorded for the ID', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+    markForgotten(dir, installId ?? '');
+    markForgotten(dir, installId ?? '');
+
+    recordLinkAnswer(dir, false);
+    assert.equal(readConsent(dir).installId, installId, 'a no leaves the count alone');
+    recordLinkAnswer(dir, true);
+    assert.equal(decline(dir), null);
+    assert.equal(readConsent(dir).installId, installId);
+  });
+
   // Long enough to sign in in the browser and come back, not a standing yes.
   test('a link answer stands for half an hour', () => {
     const dir = dataDir();

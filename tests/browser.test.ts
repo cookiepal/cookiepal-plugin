@@ -964,7 +964,7 @@ describe('the connect_account guard, as the hook runs it', () => {
     await cli(['consent', 'link', 'yes'], '', env);
     const yes = JSON.parse((await guard(call({ installId, linkInstall: true }), env)).raw);
     assert.equal(yes.hookSpecificOutput.permissionDecision, 'ask');
-    assert.match(yes.hookSpecificOutput.permissionDecisionReason, /Link your shared CookiePal install ID/);
+    assert.match(yes.hookSpecificOutput.permissionDecisionReason, /links your shared CookiePal install ID/);
   });
 
   test('lets a call with no install ID through, and refuses input it cannot read', async () => {

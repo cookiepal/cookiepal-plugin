@@ -27,7 +27,7 @@ If there is an `installId`, the user agreed to share it to count unique installs
 
 Options: **No, don't link it** · **Yes, link it**
 
-Record the answer: `CHECK consent link yes` after a clear yes, `CHECK consent link no` for anything else, including no answer. Never record a yes the user did not give. A hook on `connect_account` refuses the install ID unless it comes with the answer recorded here, and for a yes Claude Code itself asks the user to confirm before the call goes out: if they deny it there, record `CHECK consent link no` and connect with `linkInstall: false`.
+Record the answer: `CHECK consent link yes` after a clear yes, `CHECK consent link no` for anything else, including no answer. Never record a yes the user did not give. A hook on `connect_account` refuses the install ID unless it comes with the answer recorded here, and for a yes Claude Code may ask the user to confirm before the call goes out. If that call is denied, whether by the user or by the permission mode, do not treat it as a no: call `connect_account` again without `installId`, which leaves any link as it was, and tell the user the install ID could not be linked this time.
 
 ### 2. Connect
 
