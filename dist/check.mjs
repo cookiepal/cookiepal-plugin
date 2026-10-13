@@ -8864,35 +8864,43 @@ var save = (dataDir2, state) => {
   return state;
 };
 var share = (dataDir2) => save(dataDir2, { asked: true, installId: readConsent(dataDir2).installId ?? randomUUID() });
+var ERASURES_NEEDED = 2;
 var readForgotten = (dataDir2) => {
   try {
     const saved = JSON.parse(readFileSync(join2(dataDir2, FORGOTTEN), "utf8"));
-    return Array.isArray(saved) ? saved.filter((id) => typeof id === "string") : [];
+    if (Array.isArray(saved)) {
+      return Object.fromEntries(saved.filter((id) => typeof id === "string").map((id) => [id, 1]));
+    }
+    if (!saved || typeof saved !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(saved).filter((entry) => Number.isInteger(entry[1]))
+    );
   } catch {
-    return [];
+    return {};
   }
+};
+var writeForgotten = (dataDir2, forgotten) => {
+  mkdirSync(dataDir2, { recursive: true });
+  writeFileSync(join2(dataDir2, FORGOTTEN), `${JSON.stringify(forgotten)}
+`, { mode: 384 });
 };
 var markForgotten = (dataDir2, installId) => {
   if (!INSTALL_ID.test(installId)) return false;
   const forgotten = readForgotten(dataDir2);
-  if (!forgotten.includes(installId)) forgotten.push(installId);
-  mkdirSync(dataDir2, { recursive: true });
-  writeFileSync(join2(dataDir2, FORGOTTEN), `${JSON.stringify(forgotten)}
-`, { mode: 384 });
+  forgotten[installId] = (forgotten[installId] ?? 0) + 1;
+  writeForgotten(dataDir2, forgotten);
   return true;
 };
 var clearForgotten = (dataDir2, installId) => {
-  const forgotten = readForgotten(dataDir2).filter((id) => id !== installId);
+  const { [installId]: _retired, ...forgotten } = readForgotten(dataDir2);
   try {
-    mkdirSync(dataDir2, { recursive: true });
-    writeFileSync(join2(dataDir2, FORGOTTEN), `${JSON.stringify(forgotten)}
-`, { mode: 384 });
+    writeForgotten(dataDir2, forgotten);
   } catch {
   }
 };
 var decline = (dataDir2, { force = false } = {}) => {
   const { installId } = readConsent(dataDir2);
-  if (installId && !force && !readForgotten(dataDir2).includes(installId)) return null;
+  if (installId && !force && (readForgotten(dataDir2)[installId] ?? 0) < ERASURES_NEEDED) return null;
   return save(dataDir2, { asked: true, installId: null });
 };
 
@@ -9726,7 +9734,7 @@ var output = (mode) => {
   if (!saved) return { ok: false, error: `Use "output" with one of: ${OUTPUT_MODES.join(", ")}.` };
   return { ok: true, output: saved.mode, asked: saved.asked };
 };
-var STILL_STORED = `This machine still has an install ID whose stored checks have not been erased. Run the cookiepal server's forget_install with it first. To stop sending it anyway, leaving those checks to expire on their own, run "consent decline --anyway".`;
+var STILL_STORED = `This machine still has an install ID whose stored checks have not been erased twice. Run the cookiepal server's forget_install with it until two runs have reported nothing remaining: the second catches a check the first could not see yet. To stop sending it anyway, leaving those checks to expire on their own, run "consent decline --anyway".`;
 var consent = (answer, flag) => {
   if (!dataDir) return NO_DATA_DIR;
   if (answer !== "share" && answer !== "decline" && answer !== "status") {
