@@ -2,7 +2,15 @@ import { readFileSync } from 'node:fs';
 import { assess } from './assess.ts';
 import { CheckError, type ConsentRequest, findBrowser, loadPage, type PageLoad } from './browser.ts';
 import { categorise } from './categorise.ts';
-import { clearForgotten, decline, markForgotten, readConsent, share } from './consent.ts';
+import {
+  clearForgotten,
+  connectDecision,
+  decline,
+  markForgotten,
+  readConsent,
+  recordLinkAnswer,
+  share,
+} from './consent.ts';
 import { renderInventory, renderMarkdownDocument, renderTerminal } from './markdown.ts';
 import { fallbacksFor, OUTPUT_MODES, readOutput, setOutput } from './output.ts';
 import { pageText } from './pageText.ts';
@@ -29,6 +37,7 @@ import { prepareUrl } from './url.ts';
  *   consent  share | decline      → records the answer; `decline` also withdraws and deletes the ID
  *   consent  status               → the answer and the stored ID, read-only, so it can be erased server-side first
  *   consent  decline --anyway     → declines even though the stored ID's checks were never erased
+ *   consent  link yes|no          → records the answer to linking the stored ID to the account being connected
  *   save-forgotten stdin: hook JSON → the PostToolUse hook on forget_install records the erasure
  *   run <ref>                     → loads the URL prepare saved and returns the exact submit_check arguments
  *   assess <checkId> [inventory]  → the plain-language read of that check against GDPR, CCPA, LGPD and Law 25
@@ -37,6 +46,7 @@ import { prepareUrl } from './url.ts';
  *   save-plan  stdin: hook JSON   → the PostToolUse hook on plan_check stores the plan for `run`
  *   save-result stdin: hook JSON  → the PostToolUse hook on submit_check stores the result for `assess`
  *   guard-plan stdin: hook JSON   → the PreToolUse hook on plan_check refuses a URL with a query or fragment
+ *   guard-connect stdin: hook JSON → the PreToolUse hook on connect_account refuses an install ID with no matching answer
  *
  * The URL comes on stdin, so it never passes through shell quoting. Nothing from
  * the page or the server is ever put in a command: `ref` is a UUID this script
@@ -119,8 +129,18 @@ export const STILL_STORED =
 
 const consent = (answer: string | undefined, flag: string | undefined): Output => {
   if (!dataDir) return NO_DATA_DIR;
-  if (answer !== 'share' && answer !== 'decline' && answer !== 'status') {
-    return { ok: false, error: 'Use "consent share", "consent decline" or "consent status".' };
+  if (answer !== 'share' && answer !== 'decline' && answer !== 'status' && answer !== 'link') {
+    return {
+      ok: false,
+      error: 'Use "consent share", "consent decline", "consent status" or "consent link yes|no".',
+    };
+  }
+
+  if (answer === 'link') {
+    if (flag !== 'yes' && flag !== 'no') return { ok: false, error: 'Use "consent link yes" or "consent link no".' };
+    const recorded = recordLinkAnswer(dataDir, flag === 'yes');
+    if (!recorded) return { ok: false, error: 'No install ID is stored on this machine, so there is nothing to link.' };
+    return { ok: true, link: { installId: recorded.installId, linkInstall: recorded.link } };
   }
 
   // `status` changes nothing: it is how the stored ID is read before
@@ -361,9 +381,9 @@ const main = async (): Promise<Output> => {
       return {
         ok: false,
         error:
-          'Usage: check.mjs prepare | consent share|decline [--anyway]|status | run <ref> | ' +
+          'Usage: check.mjs prepare | consent share|decline [--anyway]|status|link yes|no | run <ref> | ' +
           'assess <checkId> [inventory] | output artifact|html|markdown|terminal | ' +
-          'save-plan | save-result | save-forgotten | guard-plan',
+          'save-plan | save-result | save-forgotten | guard-plan | guard-connect',
       };
   }
 };
@@ -400,9 +420,35 @@ const GUARD_REASON =
   "plan_check takes only a page as the check's prepare step returns it: origin and path, with no query string, " +
   'fragment or credentials. Run prepare and send its `page`; the rest stays on this machine.';
 
-const deny = () => {
-  const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: GUARD_REASON };
+const decide = (permissionDecision: 'deny' | 'ask', reason: string) => {
+  const decision = { hookEventName: 'PreToolUse', permissionDecision, permissionDecisionReason: reason };
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: decision })}\n`);
+};
+
+const deny = (reason = GUARD_REASON) => decide('deny', reason);
+
+export const CONNECT_GUARD_REASON =
+  "connect_account takes the install ID only with the user's own answer to linking it, recorded on this " +
+  'machine in the last half hour. Ask the user the link question again (agreeing to share the ID is not ' +
+  'agreeing to link it), then send the ID with linkInstall set to their answer.';
+
+/** Shown by Claude Code's own permission dialog, so the yes to linking comes from the user. */
+export const CONNECT_ASK_REASON =
+  'Link your shared CookiePal install ID to the account you are connecting? It lets CookiePal see ' +
+  "that this install's checks led to an account. Deny to connect without linking it.";
+
+/** The PreToolUse hook on connect_account. Fails closed: unreadable input is refused. */
+const guardConnect = async () => {
+  let input: unknown;
+  try {
+    input = JSON.parse(await readStdin())?.tool_input;
+  } catch {
+    deny(CONNECT_GUARD_REASON);
+    return;
+  }
+  const decision = connectDecision(dataDir, input);
+  if (decision === 'deny') deny(CONNECT_GUARD_REASON);
+  if (decision === 'ask') decide('ask', CONNECT_ASK_REASON);
 };
 
 /**
@@ -443,6 +489,8 @@ if (process.argv[2] === 'save-plan') {
   hook(saveForgotten);
 } else if (process.argv[2] === 'guard-plan') {
   guard();
+} else if (process.argv[2] === 'guard-connect') {
+  guardConnect();
 } else {
   main()
     .catch(

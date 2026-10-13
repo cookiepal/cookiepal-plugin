@@ -5,7 +5,16 @@ import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import { isThirdParty } from '../src/browser.ts';
 import { categorise } from '../src/categorise.ts';
-import { decline, markForgotten, readConsent, share } from '../src/consent.ts';
+import {
+  connectDecision,
+  decline,
+  LINK_ANSWER_TTL_MS,
+  markForgotten,
+  readConsent,
+  readLinkAnswer,
+  recordLinkAnswer,
+  share,
+} from '../src/consent.ts';
 import { MAX_PAGE_TEXT, pageText } from '../src/pageText.ts';
 import { type Limits, parsePlan } from '../src/plan.ts';
 import { buildConsent, buildConsentRun, buildSubmission, type CapturedCookie } from '../src/result.ts';
@@ -370,6 +379,99 @@ describe('install ID consent', () => {
   test('a malformed ID is never recorded as erased', () => {
     const dir = dataDir();
     assert.equal(markForgotten(dir, 'not-an-id'), false);
+  });
+
+  test('a link answer needs a stored ID, and is kept for that ID', () => {
+    const dir = dataDir();
+    assert.equal(recordLinkAnswer(dir, true), null);
+
+    const { installId } = share(dir);
+    const now = 1_800_000_000_000;
+    assert.deepEqual(recordLinkAnswer(dir, false, now), { installId, link: false, at: now });
+    assert.deepEqual(readLinkAnswer(dir, now), { installId, link: false, at: now });
+  });
+
+  // Long enough to sign in in the browser and come back, not a standing yes.
+  test('a link answer stands for half an hour', () => {
+    const dir = dataDir();
+    share(dir);
+    const now = 1_800_000_000_000;
+    recordLinkAnswer(dir, true, now);
+
+    assert.notEqual(readLinkAnswer(dir, now + LINK_ANSWER_TTL_MS), null);
+    assert.equal(readLinkAnswer(dir, now + LINK_ANSWER_TTL_MS + 1), null);
+    assert.equal(readLinkAnswer(dir, now - 1), null);
+  });
+});
+
+/**
+ * The PreToolUse hook on connect_account. Sharing the install ID and linking
+ * it to an account are separate answers, so the ID may only go with the link
+ * answer this machine recorded, enforced here rather than left to the skill.
+ */
+describe('the connect_account guard', () => {
+  const dirs: string[] = [];
+  const answered = (link: boolean, now: number) => {
+    const dir = mkdtempSync(join(tmpdir(), 'cookiepal-data-'));
+    dirs.push(dir);
+    const { installId } = share(dir);
+    recordLinkAnswer(dir, link, now);
+    return { dir, installId: installId ?? '' };
+  };
+  after(() => {
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  // Stop-sharing says the ID is gone from this machine, so every copy has to be.
+  test('withdrawing deletes the link answer with the ID', () => {
+    const { dir } = answered(true, NOW);
+    markForgotten(dir, readConsent(dir).installId ?? '');
+    decline(dir);
+    assert.equal(existsSync(join(dir, 'link-answer.json')), false);
+  });
+
+  const NOW = 1_800_000_000_000;
+
+  test('lets a call with no install ID through: it links nothing', () => {
+    assert.equal(connectDecision(null, {}), 'allow');
+    assert.equal(connectDecision(null, undefined), 'allow');
+  });
+
+  test('lets a no through, removing any link', () => {
+    const { dir, installId } = answered(false, NOW);
+    assert.equal(connectDecision(dir, { installId, linkInstall: false }, NOW), 'allow');
+  });
+
+  // Claude records the answer, so a yes is put to the user by Claude Code too.
+  test('puts a recorded yes to the user before the ID is linked', () => {
+    const { dir, installId } = answered(true, NOW);
+    assert.equal(connectDecision(dir, { installId, linkInstall: true }, NOW), 'ask');
+  });
+
+  test('refuses the ID sent as a yes when the user said no, or the other way round', () => {
+    const no = answered(false, NOW);
+    assert.equal(connectDecision(no.dir, { installId: no.installId, linkInstall: true }, NOW), 'deny');
+    const yes = answered(true, NOW);
+    assert.equal(connectDecision(yes.dir, { installId: yes.installId, linkInstall: false }, NOW), 'deny');
+  });
+
+  // A yes to sharing the ID is all a model would have without the second question.
+  test('refuses the ID with no link answer recorded', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cookiepal-data-'));
+    dirs.push(dir);
+    const { installId } = share(dir);
+    assert.equal(connectDecision(dir, { installId, linkInstall: true }, NOW), 'deny');
+  });
+
+  test('refuses the ID without an answer in the call, another ID, an old answer, or no data folder', () => {
+    const { dir, installId } = answered(true, NOW);
+    assert.equal(connectDecision(dir, { installId }, NOW), 'deny');
+    assert.equal(
+      connectDecision(dir, { installId: '3b241101-e2bb-4255-8caf-4136c566a962', linkInstall: true }, NOW),
+      'deny',
+    );
+    assert.equal(connectDecision(dir, { installId, linkInstall: true }, NOW + LINK_ANSWER_TTL_MS + 1), 'deny');
+    assert.equal(connectDecision(null, { installId, linkInstall: true }, NOW), 'deny');
   });
 });
 

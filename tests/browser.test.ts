@@ -22,6 +22,7 @@ interface Output {
   ref?: string;
   removedCrawlMarkers?: string[];
   consent?: { asked: boolean; installId: string | null };
+  link?: { installId: string; linkInstall: boolean };
   submit: {
     cookies: { name: string; category: string }[];
     thirdPartyHosts: string[];
@@ -930,6 +931,51 @@ describe('the plan_check guard', () => {
       assert.equal(raw, '');
       assert.equal(code, 0);
     }
+  });
+});
+
+describe('the connect_account guard, as the hook runs it', () => {
+  const guard = (input: string, env: Record<string, string> = {}) => cli(['guard-connect'], input, env);
+  const call = (toolInput: Record<string, unknown>) =>
+    JSON.stringify({ hook_event_name: 'PreToolUse', tool_input: toolInput });
+
+  test('refuses the install ID until the user answers the link question, then sends exactly that answer', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const installId = (await cli(['consent', 'share'], '', env)).output.consent?.installId;
+
+    const before = JSON.parse((await guard(call({ installId, linkInstall: true }), env)).raw);
+    assert.equal(before.hookSpecificOutput.permissionDecision, 'deny');
+    assert.match(before.hookSpecificOutput.permissionDecisionReason, /Ask the user the link question again/);
+
+    const recorded = await cli(['consent', 'link', 'no'], '', env);
+    assert.deepEqual(recorded.output.link, { installId, linkInstall: false });
+
+    assert.equal((await guard(call({ installId, linkInstall: false }), env)).raw, '');
+    const flipped = JSON.parse((await guard(call({ installId, linkInstall: true }), env)).raw);
+    assert.equal(flipped.hookSpecificOutput.permissionDecision, 'deny');
+
+    // A yes is put to the user by Claude Code's own dialog: only they approve the link.
+    await cli(['consent', 'link', 'yes'], '', env);
+    const yes = JSON.parse((await guard(call({ installId, linkInstall: true }), env)).raw);
+    assert.equal(yes.hookSpecificOutput.permissionDecision, 'ask');
+    assert.match(yes.hookSpecificOutput.permissionDecisionReason, /Link your shared CookiePal install ID/);
+  });
+
+  test('lets a call with no install ID through, and refuses input it cannot read', async () => {
+    const { raw, code } = await guard(call({}));
+    assert.equal(raw, '');
+    assert.equal(code, 0);
+
+    const unreadable = await guard('not json');
+    assert.equal(JSON.parse(unreadable.raw).hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(unreadable.code, 0);
+  });
+
+  test('records no link answer when there is no install ID to link', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const { output } = await cli(['consent', 'link', 'yes'], '', env);
+    assert.equal(output.ok, false);
+    assert.match(output.error ?? '', /nothing to link/);
   });
 });
 
