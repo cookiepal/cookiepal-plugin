@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -342,6 +342,7 @@ describe('install ID consent', () => {
     assert.match(installId ?? '', /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.equal(share(dir).installId, installId);
     markForgotten(dir, installId ?? '');
+    markForgotten(dir, installId ?? '');
     decline(dir);
     assert.deepEqual(readConsent(dir), { asked: true, installId: null });
     assert.doesNotMatch(readFileSync(join(dir, 'install-id.json'), 'utf8'), new RegExp(installId ?? 'x'));
@@ -365,6 +366,31 @@ describe('install ID consent', () => {
     share(dir);
 
     assert.equal(decline(dir), null);
+  });
+
+  // The server's index can lag, so a check stored just before the first run can
+  // be missing from it. Only the second run is evidence that nothing was missed.
+  test('one clean erasure is not enough to delete the ID', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+
+    markForgotten(dir, installId ?? '');
+    assert.equal(decline(dir), null);
+    assert.equal(readConsent(dir).installId, installId);
+
+    markForgotten(dir, installId ?? '');
+    assert.deepEqual(decline(dir), { asked: true, installId: null });
+  });
+
+  // A marker written by the version that needed one run still counts, but only as one.
+  test('a marker list from an older version counts as one erasure', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+    writeFileSync(join(dir, 'forgotten-install-ids.json'), `${JSON.stringify([installId])}\n`);
+
+    assert.equal(decline(dir), null);
+    markForgotten(dir, installId ?? '');
+    assert.deepEqual(decline(dir), { asked: true, installId: null });
   });
 
   test('a malformed ID is never recorded as erased', () => {

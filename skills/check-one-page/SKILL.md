@@ -42,9 +42,10 @@ If the user wants to stop sharing their install ID (for example `/cookiepal:chec
 
 - Run `CHECK consent status`. It changes nothing and returns the stored `installId`.
 - If there is one, call the cookiepal server's `forget_install` tool with it. It answers with how many stored checks were deleted and how many remain.
+- Call `forget_install` with the same ID a second time. The server finds checks through an index that can lag a few seconds behind, so a check stored just before this can be missing from the first run even when it reports nothing remaining; the second run deletes it. `CHECK consent decline` refuses until two runs have each reported nothing remaining.
 - Then run `CHECK consent decline`, which deletes the ID from this machine.
 
-Confirm all of it: how many stored checks were deleted, that the ID is gone from this machine and will no longer be sent, and that checks keep working without it. The question is not asked again, so don't suggest it will be. Then stop.
+Confirm all of it: how many stored checks were deleted across both runs, that the ID is gone from this machine and will no longer be sent, and that checks keep working without it. The question is not asked again, so don't suggest it will be. Then stop.
 
 **If there is no stored ID**, skip the `forget_install` call, say there was nothing to delete, and still run `CHECK consent decline` — that is what records the answer, so the sharing question is not asked again.
 
