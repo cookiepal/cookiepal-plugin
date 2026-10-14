@@ -191,6 +191,8 @@ The check never needs an account. To use CookiePal on a site you run, connect on
 
 A CookiePal page opens in your browser. If you are already signed in to CookiePal there, press Connect and you are done. If not, sign in, continue with Google, or create a free account (in a new tab), then come back and press Connect. Your password never passes through the terminal, and the plugin never sees it. If you shared an install ID, you are asked whether to link it to the account, every time you connect. The link is deleted after 180 days, when you answer no on a later connect, or straight away with `/cookiepal:check stop-sharing`.
 
+Once connected, you can ask Claude which domains the account has, with each one's plan, or to add one. A domain added this way starts on the free plan, and an account can add up to 10 a day like this. Nothing is scanned on CookiePal's side: run `/cookiepal:check` on the new domain to see its cookies.
+
 ## 🔄 Update and uninstall
 
 ```
@@ -211,7 +213,7 @@ The plugin itself: the manifests, the `/cookiepal:check` and `/cookiepal:connect
 
 Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its one dependency. Rebuild it with `pnpm build`; CI fails when it is out of date.
 
-`plan_check`, `submit_check`, `forget_install` and `connect_account` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
+`plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains` and `add_domain` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
 
 ## 🤝 Contributing
 
