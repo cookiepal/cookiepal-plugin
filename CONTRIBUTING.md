@@ -44,9 +44,10 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 | `skills/check-one-page/SKILL.md` | The skill the command follows |
 | `commands/connect.md` | The `/cookiepal:connect` command |
 | `skills/connect-account/SKILL.md` | The skill it follows: connecting a CookiePal account, and the separate question of linking the install ID to it |
-| `src/` | The local check: browser control, cookie capture, banner matching, categorisation, the risk read and its rendered forms |
+| `skills/verify-installation/SKILL.md` | The skill for the install tag and for confirming the banner is live from a page load on this machine |
+| `src/` | The local check: browser control, cookie capture, banner matching, categorisation, the install-tag finder, the risk read and its rendered forms |
 | `src/laws.ts` | The curated legal wording |
-| `hooks/hooks.json` | Hooks that keep query strings off `plan_check`, keep the install ID off `connect_account` without a recorded answer to linking it (and ask Claude Code to confirm a yes with the user, which bypass-permissions mode skips), and hand each plan and result to the local check |
+| `hooks/hooks.json` | Hooks that keep query strings off `plan_check`, keep the install ID off `connect_account` without a recorded answer to linking it (and ask Claude Code to confirm a yes with the user, which bypass-permissions mode skips), hand each plan, result and install tag to the local check, and refuse a `verify_installation` reading no local run produced |
 | `tests/` | Unit tests and browser tests against a local server |
 | `.claude-plugin/` | The plugin and marketplace manifests |
 
@@ -58,7 +59,7 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 
 **The check never judges compliance.** It reports what was found and what each law asks for. "This site is compliant" is not something it can say, and that rule is written into the skill as well as the output.
 
-**Nothing new should leave the user's machine** without a very good reason. The page's origin and path, the cookies without their values, the third-party hosts, the plugin version, the country and an optional install ID. That is the whole list, and it is documented in the [privacy notice](https://cookiepal.io/plugin-privacy). Adding a field means updating that notice in the same change.
+**Nothing new should leave the user's machine** without a very good reason. The page's origin and path, the cookies without their values, the third-party hosts, the plugin version, the country and an optional install ID. Confirming an install adds one more reading, described in the README's "What is sent to CookiePal": the page's origin and path, when it was read, the banner script found there without its query string, that script's tag rebuilt from a fixed set of attributes, and whether the page could not be read. That is the whole list, and it is documented in the [privacy notice](https://cookiepal.io/plugin-privacy) and in the README. Adding a field means updating both in the same change.
 
 **Keep the product name "CookiePal".** "Works with Claude Code" is a compatibility statement; it is never part of the name.
 
