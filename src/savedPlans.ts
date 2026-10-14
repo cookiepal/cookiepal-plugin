@@ -33,6 +33,8 @@ const PLANS = 'plans';
 const TARGETS = 'targets';
 const RESULTS = 'results';
 const REPORTS = 'reports';
+const SNIPPETS = 'snippets';
+const EVIDENCE = 'evidence';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_AGE_MS = 30 * 60 * 1000;
 
@@ -101,17 +103,6 @@ const liveFiles = (dir: string): string[] => {
   return live.sort((a, b) => b.mtime - a.mtime).map(({ path }) => path);
 };
 
-/** Reads a JSON file once: it is deleted whatever it holds. */
-const takeJson = (path: string): unknown => {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch {
-    return null;
-  } finally {
-    rmSync(path, { force: true });
-  }
-};
-
 const write = (dir: string, name: string, value: unknown) => {
   mkdirSync(dir, { recursive: true });
   liveFiles(dir);
@@ -119,6 +110,15 @@ const write = (dir: string, name: string, value: unknown) => {
 };
 
 const isRef = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
+
+/**
+ * What a domain may be when it names a file. One rule, used by every function
+ * that reads or writes under a domain's name: a separator or a traversal in it
+ * would otherwise choose the path, and a write side loosened without the read
+ * side would make saved evidence unfindable, which the guard reads as a forgery.
+ */
+const isDomainId = (value: unknown): value is string =>
+  typeof value === 'string' && /^[A-Za-z0-9.\-_]{1,253}$/.test(value);
 
 /** Stores the plan from a PostToolUse payload. Anything that is not a plan is ignored. */
 export const savePlan = (dataDir: string, payload: unknown): boolean => {
@@ -160,6 +160,8 @@ export const sweep = (dataDir: string): void => {
   liveFiles(join(dataDir, TARGETS));
   liveFiles(join(dataDir, RESULTS));
   liveFiles(join(dataDir, REPORTS));
+  liveFiles(join(dataDir, SNIPPETS));
+  liveFiles(join(dataDir, EVIDENCE));
 };
 
 /** Stores the `submit_check` result from a PostToolUse payload, under its own check ID. */
@@ -210,6 +212,91 @@ export const writeRendered = (dataDir: string, checkId: string, name: string, co
   }
 };
 
+export interface SavedSnippet {
+  /** The domain the snippet is for, as the server named it. */
+  domainId: string;
+  /** The script URL this domain's tag must load, which is what the install check looks for. */
+  scriptUrl: string;
+  /** `Date.now()` when the hook saved it. */
+  savedAt: number;
+}
+
+/**
+ * Stores what `get_install_snippet` returned, so the install check compares
+ * against the server's own script URL rather than one retyped into a command.
+ * The PostToolUse hook on that tool is what calls this.
+ */
+export const saveSnippet = (dataDir: string, payload: unknown): boolean => {
+  if (!isRecord(payload)) return false;
+  const result = resultFrom(payload.tool_response);
+  if (!result || typeof result.domainId !== 'string' || typeof result.scriptUrl !== 'string') {
+    return false;
+  }
+  // The domain names the file, so it is held to what a domain can be.
+  if (!isDomainId(result.domainId)) return false;
+  const saved: SavedSnippet = {
+    domainId: result.domainId,
+    scriptUrl: result.scriptUrl,
+    savedAt: Date.now(),
+  };
+  write(join(dataDir, SNIPPETS), `${result.domainId}.json`, saved);
+  return true;
+};
+
+/**
+ * The newest snippet the hook saved in the last 30 minutes, or the one for a
+ * named domain. Left in place once read: one snippet can be verified more than
+ * once while a user fixes their tag, and it is only the server's own answer
+ * coming back.
+ */
+export const readSnippet = (dataDir: string, domainId?: string): SavedSnippet | null => {
+  // The same rule the write side applies. No caller names a domain today, but
+  // the guard belongs with the path, not with whoever happens to call it.
+  if (domainId !== undefined && !isDomainId(domainId)) return null;
+  const paths = domainId ? [join(dataDir, SNIPPETS, `${domainId}.json`)] : liveFiles(join(dataDir, SNIPPETS));
+  for (const path of paths) {
+    try {
+      if (isExpired(path)) {
+        rmSync(path, { force: true });
+        continue;
+      }
+      const saved: unknown = JSON.parse(readFileSync(path, 'utf8'));
+      if (!isRecord(saved) || typeof saved.domainId !== 'string') continue;
+      if (typeof saved.scriptUrl !== 'string' || typeof saved.savedAt !== 'number') continue;
+      return { domainId: saved.domainId, scriptUrl: saved.scriptUrl, savedAt: saved.savedAt };
+    } catch {}
+  }
+  return null;
+};
+
+/**
+ * What a local install check found, kept so the PreToolUse hook on
+ * `verify_installation` can refuse evidence that no local run produced. The
+ * server's own copy is the one that counts; this is only how the guard knows
+ * the call is reporting a real reading rather than an assembled one.
+ */
+export const saveEvidence = (dataDir: string, domainId: string, evidence: unknown): boolean => {
+  if (!isDomainId(domainId)) return false;
+  write(join(dataDir, EVIDENCE), `${domainId}.json`, { domainId, evidence, savedAt: Date.now() });
+  return true;
+};
+
+/** The evidence a local run saved for this domain in the last 30 minutes. */
+export const readEvidence = (dataDir: string, domainId: string): Record<string, unknown> | null => {
+  if (!isDomainId(domainId)) return null;
+  const path = join(dataDir, EVIDENCE, `${domainId}.json`);
+  try {
+    if (isExpired(path)) {
+      rmSync(path, { force: true });
+      return null;
+    }
+    const saved: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    return isRecord(saved) && isRecord(saved.evidence) ? saved.evidence : null;
+  } catch {
+    return null;
+  }
+};
+
 export interface SavedTarget {
   page: string;
   target: string;
@@ -225,20 +312,34 @@ export const saveTarget = (dataDir: string, target: Omit<SavedTarget, 'savedAt'>
   return ref;
 };
 
-/** The URL `prepare` saved under this ref in the last 30 minutes, deleted as it is read. */
-export const takeTarget = (dataDir: string, ref: string): SavedTarget | null => {
+/** The URL `prepare` saved under this ref in the last 30 minutes, left in place. */
+export const readTarget = (dataDir: string, ref: string): SavedTarget | null => {
   if (!isRef(ref)) return null;
   const path = join(dataDir, TARGETS, `${ref}.json`);
+  let saved: unknown;
   try {
     if (isExpired(path)) {
       rmSync(path, { force: true });
       return null;
     }
+    saved = JSON.parse(readFileSync(path, 'utf8'));
   } catch {
     return null;
   }
-  const saved = takeJson(path);
   if (!isRecord(saved) || typeof saved.page !== 'string' || typeof saved.target !== 'string') return null;
   if (typeof saved.savedAt !== 'number') return null;
   return { page: saved.page, target: saved.target, savedAt: saved.savedAt };
+};
+
+/** Forgets a ref, once it has been used to load the page. */
+export const dropTarget = (dataDir: string, ref: string): void => {
+  if (!isRef(ref)) return;
+  rmSync(join(dataDir, TARGETS, `${ref}.json`), { force: true });
+};
+
+/** The URL `prepare` saved under this ref in the last 30 minutes, deleted as it is read. */
+export const takeTarget = (dataDir: string, ref: string): SavedTarget | null => {
+  const saved = readTarget(dataDir, ref);
+  dropTarget(dataDir, ref);
+  return saved;
 };
