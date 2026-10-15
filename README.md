@@ -41,6 +41,7 @@
 - [🔐 What is sent to CookiePal](#-what-is-sent-to-cookiepal)
   - [🆔 The install ID](#-the-install-id)
 - [🔑 Connect a CookiePal account](#-connect-a-cookiepal-account)
+- [🏷️ Install the banner](#️-install-the-banner)
 - [🔄 Update and uninstall](#-update-and-uninstall)
 - [📦 What is in this repository](#-what-is-in-this-repository)
 - [🤝 Contributing](#-contributing)
@@ -196,6 +197,20 @@ A CookiePal page opens in your browser. If you are already signed in to CookiePa
 
 Once connected, you can ask Claude which domains the account has, with each one's plan, or to add one. A domain added this way starts on the free plan, and an account can add up to 10 a day like this. Nothing is scanned on CookiePal's side: run `/cookiepal:check` on the new domain to see its cookies.
 
+## 🏷️ Install the banner
+
+Run this in the site's own repository, once a domain is connected:
+
+```
+/cookiepal:install-banner
+```
+
+It names the framework the repository is built with — Next, Nuxt, Astro, Vite, Remix, SvelteKit, a custom build, or a Shopify theme — and the file that renders the page head, then puts the banner tag there, as early as that framework allows, so the banner can block scripts before they load. On a Shopify theme the earliest the platform allows is right after `content_for_header`, which is still before the rest of the page.
+
+The change is shown as a diff and left uncommitted. **It never commits, never pushes, and never leaves anything else in the working tree** — review it and commit it yourself. A repository that already has the tag is left exactly as it was, and one carrying a tag for a different domain is flagged rather than given a second banner. Where the right file is genuinely ambiguous — a Next.js repo part-way through the move from Pages Router to App Router, say — it names the candidates and asks instead of guessing.
+
+Once the change is deployed, run `/cookiepal:verify-installation` to confirm it is live. To just name the framework and head file without changing anything, run `/cookiepal:detect-stack`.
+
 ## 🔄 Update and uninstall
 
 ```sh
@@ -212,7 +227,7 @@ Then run `/reload-plugins` in any Claude Code session that is already open. To r
 
 ## 📦 What is in this repository
 
-The plugin itself: the manifests, the `/cookiepal:check` and `/cookiepal:connect` commands, the `check-one-page`, `connect-account` and `verify-installation` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result and each install tag to that check and refuse an install reading no local run produced.
+The plugin itself: the manifests, the `/cookiepal:check`, `/cookiepal:connect`, `/cookiepal:verify-installation`, `/cookiepal:detect-stack` and `/cookiepal:install-banner` commands, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack` and `install-banner` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result and each install tag to that check and refuse an install reading no local run produced.
 
 Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its one dependency. Rebuild it with `pnpm build`; CI fails when it is out of date.
 
