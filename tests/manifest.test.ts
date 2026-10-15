@@ -28,7 +28,7 @@ describe('plugin and marketplace manifests', () => {
   const plugin = readJson('.claude-plugin/plugin.json');
   const marketplace = readJson('.claude-plugin/marketplace.json');
 
-  // The plugin name is the command namespace, so renaming it breaks /cookiepal:check.
+  // The plugin name is the command namespace, so renaming it breaks /cookiepal:check-one-page.
   test('plugin is named cookiepal with a semver version', () => {
     assert.equal(plugin.name, 'cookiepal');
     assert.match(plugin.version, SEMVER);

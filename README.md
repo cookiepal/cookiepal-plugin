@@ -20,7 +20,7 @@
 ## 📺 Demo
 
 <div align="center">
-<!-- MEDIA: hero.gif. One /cookiepal:check run, start to verdict.
+<!-- MEDIA: hero.gif. One /cookiepal:check-one-page run, start to verdict.
      Record with docs/media/hero.tape. See docs/media/README.md. -->
 <img src="docs/media/hero.gif" alt="A CookiePal check running in Claude Code" width="800" />
 </div>
@@ -94,7 +94,7 @@ Or do it yourself:
 Run `/mcp` and you should see `cookiepal` listed as connected. Then:
 
 ```
-/cookiepal:check https://example.com
+/cookiepal:check-one-page https://example.com
 ```
 
 Requires [Node.js](https://nodejs.org) 18+ and Google Chrome, Microsoft Edge, Brave or Chromium. If your browser lives somewhere unusual, point `COOKIEPAL_BROWSER` at its executable.
@@ -129,10 +129,10 @@ Every sentence it prints about a law is fixed text that ships with the plugin an
 ### 📄 Four ways to read the result
 
 ```
-/cookiepal:check https://example.com artifact    # published to claude.ai, only after you say yes
-/cookiepal:check https://example.com html        # a local HTML file
-/cookiepal:check https://example.com markdown    # a local .md file
-/cookiepal:check https://example.com terminal    # straight to your terminal
+/cookiepal:check-one-page https://example.com artifact    # published to claude.ai, only after you say yes
+/cookiepal:check-one-page https://example.com html        # a local HTML file
+/cookiepal:check-one-page https://example.com markdown    # a local .md file
+/cookiepal:check-one-page https://example.com terminal    # straight to your terminal
 ```
 
 Same words every time. Only the styling differs. Before publishing anything, the first check asks whether to; **the default is no**, which keeps the read in a local HTML file, and your answer is remembered. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. Set one as your default if you would rather artifacts were never used.
@@ -159,9 +159,9 @@ Only what it takes to count checks and store the result:
 
 Asking CookiePal to confirm your banner is installed sends one more reading, and only when you ask for it. The page is loaded on **your** machine, never by CookiePal, and what goes up is the page's **origin and path**, **when it was read**, the **CookiePal banner script** found there with its query string stripped, that **script's tag** rebuilt from its `id`, `type`, `defer` and `async` attributes alone, and whether the page **could not be read** at all. Nothing else from the page goes with it, and the reading sets that domain's banner status in your CookiePal account.
 
-If you connect a CookiePal account with `/cookiepal:connect`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without an answer recorded on this machine, and in Claude Code's default permission mode it asks you to confirm a yes in its own dialog before the ID is sent. That dialog is skipped in bypass-permissions mode, and the hook does not run when hooks are turned off. Answering no on a later connect removes a link you made before.
+If you connect a CookiePal account with `/cookiepal:connect-account`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without an answer recorded on this machine, and in Claude Code's default permission mode it asks you to confirm a yes in its own dialog before the ID is sent. That dialog is skipped in bypass-permissions mode, and the hook does not run when hooks are turned off. Answering no on a later connect removes a link you made before.
 
-One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check stop-sharing` sends the install ID once more, on its own, so the checks stored under it can be erased. Nothing else accompanies it.
+One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check-one-page stop-sharing` sends the install ID once more, on its own, so the checks stored under it can be erased. Nothing else accompanies it.
 
 **The page is loaded by you, on your machine. CookiePal never loads it.** Cookies are categorised locally against the open-source [`@cookiepal-oss/cookie-db`](https://www.npmjs.com/package/@cookiepal-oss/cookie-db) catalogue, so nothing is sent anywhere to be identified. The risk read is assembled locally too.
 
@@ -178,7 +178,7 @@ We would like to know how many *people* use this, rather than only how many chec
 To stop sharing it and delete it:
 
 ```
-/cookiepal:check stop-sharing
+/cookiepal:check-one-page stop-sharing
 ```
 
 That also deletes the checks you already submitted, and unlinks the ID from your CookiePal account if you connected one: the plugin sends the ID to CookiePal one last time and, once the server confirms every check stored under it is gone, removes the ID from this machine. You are told how many went.
@@ -190,12 +190,12 @@ If the erasure does not go through, the ID deliberately stays put — it is the 
 The check never needs an account. To use CookiePal on a site you run, connect one:
 
 ```
-/cookiepal:connect
+/cookiepal:connect-account
 ```
 
-A CookiePal page opens in your browser. If you are already signed in to CookiePal there, press Connect and you are done. If not, sign in, continue with Google, or create a free account (in a new tab), then come back and press Connect. Your password never passes through the terminal, and the plugin never sees it. If you shared an install ID, you are asked whether to link it to the account, every time you connect. The link is deleted after 180 days, when you answer no on a later connect, or straight away with `/cookiepal:check stop-sharing`.
+A CookiePal page opens in your browser. If you are already signed in to CookiePal there, press Connect and you are done. If not, sign in, continue with Google, or create a free account (in a new tab), then come back and press Connect. Your password never passes through the terminal, and the plugin never sees it. If you shared an install ID, you are asked whether to link it to the account, every time you connect. The link is deleted after 180 days, when you answer no on a later connect, or straight away with `/cookiepal:check-one-page stop-sharing`.
 
-Once connected, you can ask Claude which domains the account has, with each one's plan, or to add one. A domain added this way starts on the free plan, and an account can add up to 10 a day like this. Nothing is scanned on CookiePal's side: run `/cookiepal:check` on the new domain to see its cookies.
+Once connected, you can ask Claude which domains the account has, with each one's plan, or to add one. A domain added this way starts on the free plan, and an account can add up to 10 a day like this. Nothing is scanned on CookiePal's side: run `/cookiepal:check-one-page` on the new domain to see its cookies.
 
 ## 🏷️ Install the banner
 
@@ -227,7 +227,7 @@ Then run `/reload-plugins` in any Claude Code session that is already open. To r
 
 ## 📦 What is in this repository
 
-The plugin itself: the manifests, the `/cookiepal:check`, `/cookiepal:connect`, `/cookiepal:verify-installation`, `/cookiepal:detect-stack` and `/cookiepal:install-banner` commands, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack` and `install-banner` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result and each install tag to that check and refuse an install reading no local run produced.
+The plugin itself: the manifests, the `/cookiepal:check-one-page`, `/cookiepal:connect-account`, `/cookiepal:verify-installation`, `/cookiepal:detect-stack` and `/cookiepal:install-banner` commands, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack` and `install-banner` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result and each install tag to that check and refuse an install reading no local run produced.
 
 Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its one dependency. Rebuild it with `pnpm build`; CI fails when it is out of date.
 

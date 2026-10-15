@@ -40,9 +40,9 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 
 | Path | What lives there |
 | --- | --- |
-| `commands/check.md` | The `/cookiepal:check` command |
+| `commands/check-one-page.md` | The `/cookiepal:check-one-page` command |
 | `skills/check-one-page/SKILL.md` | The skill the command follows |
-| `commands/connect.md` | The `/cookiepal:connect` command |
+| `commands/connect-account.md` | The `/cookiepal:connect-account` command |
 | `skills/connect-account/SKILL.md` | The skill it follows: connecting a CookiePal account, and the separate question of linking the install ID to it |
 | `commands/verify-installation.md` | The `/cookiepal:verify-installation` command |
 | `skills/verify-installation/SKILL.md` | The skill for the install tag and for confirming the banner is live from a page load on this machine |

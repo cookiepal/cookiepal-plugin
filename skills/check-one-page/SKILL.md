@@ -1,6 +1,6 @@
 ---
 name: check-one-page
-description: Checks one web page for cookies and trackers set before consent, and for what changes after accept and after reject, by loading it in a fresh temporary browser profile on the user's machine, then explains what was found against GDPR, CCPA, LGPD and Law 25. Use when the user runs /cookiepal:check, asks whether a page sets cookies before consent, asks what a banner's accept or reject button actually does, asks what a page's cookies mean under a privacy law, or asks to stop sharing their CookiePal install ID.
+description: Checks one web page for cookies and trackers set before consent, and for what changes after accept and after reject, by loading it in a fresh temporary browser profile on the user's machine, then explains what was found against GDPR, CCPA, LGPD and Law 25. Use when the user runs /cookiepal:check-one-page, asks whether a page sets cookies before consent, asks what a banner's accept or reject button actually does, asks what a page's cookies mean under a privacy law, or asks to stop sharing their CookiePal install ID.
 ---
 
 # Check one page for cookies set before consent
@@ -38,7 +38,7 @@ The URL is the command argument, or what the user asked about. If there isn't on
 
 The argument may also name where the read should go in step 9: `artifact`, `html`, `markdown` or `terminal`. Given on its own, with no URL, it sets the default instead: run `CHECK output <mode>`, confirm it, and stop.
 
-If the user wants to stop sharing their install ID (for example `/cookiepal:check stop-sharing`), this is also how their stored checks are deleted, and the order matters. Don't number these as steps: they are not the numbered sections below.
+If the user wants to stop sharing their install ID (for example `/cookiepal:check-one-page stop-sharing`), this is also how their stored checks are deleted, and the order matters. Don't number these as steps: they are not the numbered sections below.
 
 - Run `CHECK consent status`. It changes nothing and returns the stored `installId`.
 - If there is one, call the cookiepal server's `forget_install` tool with it. It answers with how many stored checks were deleted and how many remain, and `unlinked`: whether the ID was linked to a CookiePal account and that link is now removed.
@@ -67,7 +67,7 @@ This refuses a URL that is not http or https before any browser starts. It retur
 
 If `consent.asked` is false, ask the user this once, with "No" as the default and first option:
 
-> Share a random install ID with CookiePal? It only lets CookiePal count unique installs. It is a random number, not linked to you or your pages, kept in this plugin's data folder and deleted when you uninstall the plugin. If you later connect a CookiePal account, you will be asked separately whether to link it. You can stop sharing any time with `/cookiepal:check stop-sharing`. The check runs either way.
+> Share a random install ID with CookiePal? It only lets CookiePal count unique installs. It is a random number, not linked to you or your pages, kept in this plugin's data folder and deleted when you uninstall the plugin. If you later connect a CookiePal account, you will be asked separately whether to link it. You can stop sharing any time with `/cookiepal:check-one-page stop-sharing`. The check runs either way.
 
 Options: **No, don't share** · **Yes, share it**
 
@@ -153,7 +153,7 @@ The read from step 7 is the whole summary. Around it, add only what it does not 
 
 Options: **No, keep it local** · **Yes, publish it**
 
-Run `CHECK output artifact` only after a clear yes. For anything else, including no answer, run `CHECK output html`, which keeps the page on this machine. Either answer is remembered, so the question is not asked again; `/cookiepal:check <url> artifact` publishes later without re-asking. Do not ask when the user named a form in the command — that is already their answer for this run.
+Run `CHECK output artifact` only after a clear yes. For anything else, including no answer, run `CHECK output html`, which keeps the page on this machine. Either answer is remembered, so the question is not asked again; `/cookiepal:check-one-page <url> artifact` publishes later without re-asking. Do not ask when the user named a form in the command — that is already their answer for this run.
 
 Then start at `output`, or at whatever the user named in the command, and work down `fallbacks` until one works:
 

@@ -82,4 +82,4 @@ Say what the status now is in CookiePal, that the reading was taken on this mach
 
 **Verifying again means redoing step 2 first.** A `ref` names one page load; once the page has been loaded it is spent. Run `CHECK prepare` for the page again, then `CHECK verify` with the new `ref`. The snippet from step 1 is still good for half an hour, so step 1 does not have to be repeated.
 
-Never tell the user a banner is compliant, only that CookiePal can see it installed. Whether the banner does what a law requires is what `/cookiepal:check` is for.
+Never tell the user a banner is compliant, only that CookiePal can see it installed. Whether the banner does what a law requires is what `/cookiepal:check-one-page` is for.

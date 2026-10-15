@@ -109,4 +109,4 @@ this one edit.
 
 Never say the banner is installed, working, or compliant on the strength of this edit. The tag is
 now in a file; whether it is live on the site is what `/cookiepal:verify-installation` answers, and
-whether the banner satisfies a law is what `/cookiepal:check` is for.
+whether the banner satisfies a law is what `/cookiepal:check-one-page` is for.
