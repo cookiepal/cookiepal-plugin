@@ -1,0 +1,7 @@
+{
+  "name": "fixture-comment-only",
+  "private": true,
+  "devDependencies": {
+    "vite": "6.0.0"
+  }
+}
