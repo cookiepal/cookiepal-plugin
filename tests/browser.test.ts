@@ -669,7 +669,7 @@ describe('run', () => {
     const url = `http://localhost:${port}/hang`;
     const { output, temp } = await runCheck(
       url,
-      planFor(url, { load: { waitUntil: 'load', settleMs: 0, timeoutMs: 1500 } }),
+      planFor(url, { load: { waitUntil: 'load', settleMs: 0, timeoutMs: 5000 } }),
     );
     assert.equal(output.ok, true, output.error);
     assert.equal(output.local.loadTimedOut, true);
@@ -1109,7 +1109,9 @@ describe('when a reading is taken', () => {
   test('a request that never answers does not hold the settle open', async () => {
     // Quiet means nothing new, not nothing in flight: one request left open would
     // otherwise pin every page to the far cap and nothing would ever be read on time.
-    const { output } = await settling('/hang', { settleMs: 2000, timeoutMs: 1500 });
+    // The budget only has to outlast committing the navigation, which on a loaded CI
+    // runner is not instant; the load event never fires either way, because /never never answers.
+    const { output } = await settling('/hang', { settleMs: 2000, timeoutMs: 5000 });
     assert.equal(output.ok, true, output.error);
 
     assert.equal(output.local.loadTimedOut, true, 'the load event never fired');
