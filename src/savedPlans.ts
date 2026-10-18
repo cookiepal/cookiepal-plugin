@@ -35,6 +35,8 @@ const RESULTS = 'results';
 const REPORTS = 'reports';
 const SNIPPETS = 'snippets';
 const EVIDENCE = 'evidence';
+const SCANS = 'scans';
+const SCAN_PROGRESS = 'scan-progress';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_AGE_MS = 30 * 60 * 1000;
 
@@ -162,6 +164,8 @@ export const sweep = (dataDir: string): void => {
   liveFiles(join(dataDir, REPORTS));
   liveFiles(join(dataDir, SNIPPETS));
   liveFiles(join(dataDir, EVIDENCE));
+  liveFiles(join(dataDir, SCANS));
+  liveFiles(join(dataDir, SCAN_PROGRESS));
 };
 
 /** Stores the `submit_check` result from a PostToolUse payload, under its own check ID. */
@@ -342,4 +346,150 @@ export const takeTarget = (dataDir: string, ref: string): SavedTarget | null => 
   const saved = readTarget(dataDir, ref);
   dropTarget(dataDir, ref);
   return saved;
+};
+
+export interface SavedScan {
+  scanId: string;
+  domainId: string;
+  url: string;
+  maxPages: number;
+  /** `Date.now()` when the hook saved it. */
+  savedAt: number;
+}
+
+const isScanId = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
+
+/**
+ * Whether a scan's start URL may be crawled automatically: http(s) only, and
+ * never loopback, link-local or private-range hosts, since the hook crawls it
+ * with no step in between where the user could see it.
+ */
+const isCrawlableUrl = (value: string): boolean => {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+  const host = url.hostname
+    .toLowerCase()
+    .replace(/^\x5B|\x5D$/g, '')
+    .replace(/\.$/, '');
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) {
+    return false;
+  }
+  // Public IPv6 never starts with `::`, which covers loopback, unspecified, IPv4-compatible and IPv4-mapped.
+  if (host.includes(':')) return !/^(::|f[cd]|fe[89abc])/.test(host);
+  const octets = host.split('.').map(Number);
+  if (octets.length === 4 && octets.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+    const [a, b] = octets as [number, number, number, number];
+    return !(
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168)
+    );
+  }
+  return true;
+};
+
+/** Stores what `start_scan` returned, from a PostToolUse payload. */
+export const saveScan = (dataDir: string, payload: unknown): boolean => {
+  if (!isRecord(payload)) return false;
+  const result = resultFrom(payload.tool_response);
+  if (!result || !isScanId(result.scanId)) return false;
+  if (typeof result.domainId !== 'string' || typeof result.url !== 'string') return false;
+  if (typeof result.maxPages !== 'number') return false;
+  if (!isCrawlableUrl(result.url)) return false;
+  const saved: SavedScan = {
+    scanId: result.scanId,
+    domainId: result.domainId,
+    url: result.url,
+    maxPages: result.maxPages,
+    savedAt: Date.now(),
+  };
+  write(join(dataDir, SCANS), `${result.scanId}.json`, saved);
+  return true;
+};
+
+/** The scan `start_scan` saved under this ID in the last 30 minutes, left in place: the `save-scan` hook reads it to spawn the crawl, and the crawl process reads it again for its own arguments. */
+export const readScan = (dataDir: string, scanId: string): SavedScan | null => {
+  if (!isScanId(scanId)) return null;
+  const path = join(dataDir, SCANS, `${scanId}.json`);
+  try {
+    if (isExpired(path)) {
+      rmSync(path, { force: true });
+      return null;
+    }
+    const saved: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    if (!isRecord(saved)) return null;
+    const { scanId: id, domainId, url, maxPages, savedAt } = saved;
+    if (typeof id !== 'string' || typeof domainId !== 'string' || typeof url !== 'string') return null;
+    if (typeof maxPages !== 'number' || typeof savedAt !== 'number') return null;
+    return { scanId: id, domainId, url, maxPages, savedAt };
+  } catch {
+    return null;
+  }
+};
+
+/** The newest scan saved in the last 30 minutes: what the `save-scan` hook spawns the crawl for, right after it has saved it. */
+export const newestScan = (dataDir: string): SavedScan | null => {
+  for (const path of liveFiles(join(dataDir, SCANS))) {
+    let saved: unknown;
+    try {
+      saved = JSON.parse(readFileSync(path, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (!isRecord(saved) || typeof saved.scanId !== 'string') continue;
+    const scan = readScan(dataDir, saved.scanId);
+    if (scan) return scan;
+  }
+  return null;
+};
+
+/** What a local crawl is doing, or how it ended. One evolving record per scan ID. */
+export type ScanProgress =
+  | { status: 'running'; pagesVisited: number }
+  | { status: 'blocked'; blockedUrl: string }
+  | { status: 'failed'; error: string }
+  | {
+      status: 'done';
+      pagesScanned: number;
+      cookies: Record<string, unknown>[];
+      thirdPartyHosts: string[];
+      truncated: boolean;
+    };
+
+/**
+ * Records how a scan is going, or how it ended. Overwritten as the crawl
+ * progresses, so `scan status` always reports the latest line of it.
+ */
+export const saveScanProgress = (dataDir: string, scanId: string, progress: ScanProgress): boolean => {
+  if (!isScanId(scanId)) return false;
+  write(join(dataDir, SCAN_PROGRESS), `${scanId}.json`, { scanId, ...progress, savedAt: Date.now() });
+  return true;
+};
+
+/** What `scan status` reports: the progress or outcome last saved for this scan ID, in the last 30 minutes. */
+export const readScanProgress = (
+  dataDir: string,
+  scanId: string,
+): (ScanProgress & { scanId: string; savedAt: number }) | null => {
+  if (!isScanId(scanId)) return null;
+  const path = join(dataDir, SCAN_PROGRESS, `${scanId}.json`);
+  try {
+    if (isExpired(path)) {
+      rmSync(path, { force: true });
+      return null;
+    }
+    const saved: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    if (!isRecord(saved) || typeof saved.status !== 'string' || typeof saved.scanId !== 'string') return null;
+    return saved as ScanProgress & { scanId: string; savedAt: number };
+  } catch {
+    return null;
+  }
 };
