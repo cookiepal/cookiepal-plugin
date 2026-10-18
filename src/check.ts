@@ -1,4 +1,6 @@
+import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { assess } from './assess.ts';
 import { CheckError, type ConsentRequest, findBrowser, isThirdParty, loadPage, type PageLoad } from './browser.ts';
 import { categorise } from './categorise.ts';
@@ -11,6 +13,7 @@ import {
   recordLinkAnswer,
   share,
 } from './consent.ts';
+import { GCM_READING_EXPRESSION, parseGcmReading } from './gcm.ts';
 import { findTagExpression, NOT_FOUND, parseFoundTag, verifyDecision } from './install.ts';
 import { renderInventory, renderMarkdownDocument, renderTerminal } from './markdown.ts';
 import { fallbacksFor, OUTPUT_MODES, readOutput, setOutput } from './output.ts';
@@ -20,13 +23,17 @@ import { renderDocument, renderReport } from './report.ts';
 import { buildConsent, buildSubmission } from './result.ts';
 import {
   dropTarget,
+  newestScan,
   readResult,
+  readScanProgress,
   readSnippet,
   readTarget,
   resultFrom,
   saveEvidence,
   savePlan,
   saveResult,
+  saveScan,
+  saveScanProgress,
   saveSnippet,
   saveTarget,
   sweep,
@@ -34,6 +41,7 @@ import {
   takeTarget,
   writeRendered,
 } from './savedPlans.ts';
+import { UPLOAD_GUARD_REASON, uploadDecision } from './scanGuard.ts';
 import { prepareUrl } from './url.ts';
 
 /**
@@ -56,6 +64,10 @@ import { prepareUrl } from './url.ts';
  *   save-result stdin: hook JSON  → the PostToolUse hook on submit_check stores the result for `assess`
  *   guard-plan stdin: hook JSON   → the PreToolUse hook on plan_check refuses a URL with a query or fragment
  *   guard-connect stdin: hook JSON → the PreToolUse hook on connect_account refuses an install ID with no matching answer
+ *   save-scan stdin: hook JSON    → the one PostToolUse hook on start_scan: saves the scan and spawns the crawl, detached
+ *   scan status <scanId>          → the crawl's progress, or its finished result for upload_scan_report
+ *   guard-upload stdin: hook JSON → the PreToolUse hook on upload_scan_report refuses a report scan status never produced
+ *   gcm stdin: the URL            → loads the page and returns the exact check_gcm_status reading
  *
  * The URL comes on stdin, so it never passes through shell quoting. Nothing from
  * the page or the server is ever put in a command: `ref` is a UUID this script
@@ -559,6 +571,155 @@ const assessCheck = (checkId: string | undefined, want: string | undefined): Out
   };
 };
 
+/**
+ * Where `scan.mjs` lives beside this bundled file. A path, never a package
+ * specifier: both are esbuild output in the same `dist/` folder, and nothing
+ * about the detached process should depend on module resolution.
+ */
+const SCAN_SCRIPT = fileURLToPath(new URL('./scan.mjs', import.meta.url));
+
+/**
+ * The one PostToolUse hook on `start_scan`: saves the server's answer, then
+ * spawns the crawl detached — stdio ignored, unref'd — and returns at once.
+ * One hook, not two: a second hook on the same matcher turned out not to run
+ * in practice (every other matcher in `hooks.json` has exactly one, and this
+ * was the only one with two), so the save and the spawn happen in a single
+ * invocation rather than depending on that. The hook's own 10-second budget
+ * only has to cover saving the plan and starting a process, never finishing
+ * a crawl that can take minutes.
+ */
+const handleScanStarted = async (): Promise<void> => {
+  let raw: string;
+  try {
+    raw = await readStdin();
+  } catch {
+    return;
+  }
+  if (!dataDir) return;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!saveScan(dataDir, payload)) return;
+
+  const scan = newestScan(dataDir);
+  if (!scan) return;
+  // Already spawned: a retried hook must not start a second crawl for the same scan.
+  if (readScanProgress(dataDir, scan.scanId)) return;
+  saveScanProgress(dataDir, scan.scanId, { status: 'running', pagesVisited: 0 });
+  const child = spawn(process.execPath, [SCAN_SCRIPT, scan.scanId], { stdio: 'ignore', detached: true });
+  child.on('error', () => {
+    saveScanProgress(dataDir, scan.scanId, { status: 'failed', error: 'The crawl could not be started.' });
+  });
+  child.unref();
+};
+
+/** How long a `running` scan may go without a crawled page before `scan status` calls it dead. */
+const SCAN_STALE_MS = 10 * 60 * 1000;
+
+/**
+ * What `upload_scan_report` is told the crawl found: the exact shape
+ * `scan status` last reported for a finished scan, which `guard-upload`
+ * then checks nothing retyped.
+ */
+const scanStatus = (scanId: string | undefined): Output => {
+  if (!dataDir) return NO_DATA_DIR;
+  sweep(dataDir);
+  const progress = readScanProgress(dataDir, scanId ?? '');
+  if (!progress) {
+    return {
+      ok: false,
+      error:
+        'No scan with that ID in the last 30 minutes, so there is nothing to report. Start a new one ' +
+        'with start_scan.',
+    };
+  }
+  if (progress.status === 'running') {
+    // Every crawled page refreshes this record, so one that has gone quiet belongs to a crawl that died.
+    if (Date.now() - progress.savedAt > SCAN_STALE_MS) {
+      return { ok: false, error: 'The crawl stopped without finishing. Start a new one with start_scan.' };
+    }
+    return { ok: true, status: 'running', pagesVisited: progress.pagesVisited };
+  }
+  if (progress.status === 'blocked') {
+    return {
+      ok: true,
+      status: 'blocked',
+      blockedUrl: progress.blockedUrl,
+      message:
+        `robots.txt on this site refused the crawl at ${progress.blockedUrl}. Allow CookiePal's local ` +
+        'crawler in robots.txt, or scan from a page robots.txt does not block, then run start_scan again.',
+    };
+  }
+  if (progress.status === 'failed') {
+    return { ok: false, error: progress.error };
+  }
+  return {
+    ok: true,
+    status: 'done',
+    pagesScanned: progress.pagesScanned,
+    cookies: progress.cookies,
+    thirdPartyHosts: progress.thirdPartyHosts,
+    truncated: progress.truncated,
+  };
+};
+
+const scanCommand = (sub: string | undefined, scanId: string | undefined): Output => {
+  if (sub === 'status') return scanStatus(scanId);
+  return { ok: false, error: 'Usage: check.mjs scan status <scanId>' };
+};
+
+/**
+ * How long the GCM check waits on the page, and how long it gives the load.
+ * Its own numbers, like the install check's: no server step issues a plan for
+ * this, and the only reading it takes is of the page's own `google_tag_data`.
+ */
+const GCM_SETTLE_MS = 2000;
+const GCM_TIMEOUT_MS = 20_000;
+
+/**
+ * The local half of `check_gcm_status`: loads the page on this machine and
+ * reads Google Consent Mode's own state. It decides nothing — the server
+ * judges the reading and names the problem — this only returns the exact
+ * `reading` argument `check_gcm_status` takes.
+ */
+const gcmCheck = async (): Promise<Output> => {
+  const raw = (await readStdin()).trim();
+  if (!raw) return { ok: false, error: 'Which page should I check? Give its URL.' };
+  const prepared = prepareUrl(raw);
+  if (!prepared.ok) return prepared;
+
+  const browserPath = findBrowser();
+  if (!browserPath) {
+    return {
+      ok: false,
+      error: 'No Chrome, Edge, Brave or Chromium was found. Install one, or set COOKIEPAL_BROWSER to its executable.',
+    };
+  }
+
+  let load: PageLoad;
+  try {
+    load = await loadPage({
+      browserPath,
+      url: prepared.target,
+      settleMs: GCM_SETTLE_MS,
+      timeoutMs: GCM_TIMEOUT_MS,
+      inspect: GCM_READING_EXPRESSION,
+    });
+  } catch (error) {
+    return { ok: false, error: error instanceof CheckError ? error.message : 'The page could not be loaded.' };
+  }
+
+  return {
+    ok: true,
+    url: prepared.page,
+    seenAt: new Date().toISOString(),
+    reading: parseGcmReading(load.inspected),
+  };
+};
+
 const main = async (): Promise<Output> => {
   const [command, argument, extra] = process.argv.slice(2);
   switch (command) {
@@ -574,13 +735,18 @@ const main = async (): Promise<Output> => {
       return assessCheck(argument, extra);
     case 'output':
       return output(argument);
+    case 'scan':
+      return scanCommand(argument, extra);
+    case 'gcm':
+      return gcmCheck();
     default:
       return {
         ok: false,
         error:
           'Usage: check.mjs prepare | consent share|decline [--anyway]|status|link yes|no | run <ref> | ' +
           'verify <ref> | assess <checkId> [inventory] | output artifact|html|markdown|terminal | ' +
-          'save-plan | save-result | save-snippet | save-forgotten | guard-plan | guard-connect | guard-verify',
+          'scan status <scanId> | gcm | save-plan | save-result | save-snippet | save-scan | ' +
+          'save-forgotten | guard-plan | guard-connect | guard-verify | guard-upload',
       };
   }
 };
@@ -665,6 +831,17 @@ const guardVerify = async () => {
   if (verifyDecision(dataDir, input) === 'deny') deny(VERIFY_GUARD_REASON);
 };
 
+const guardUpload = async () => {
+  let input: unknown;
+  try {
+    input = JSON.parse(await readStdin())?.tool_input;
+  } catch {
+    deny(UPLOAD_GUARD_REASON);
+    return;
+  }
+  if (uploadDecision(dataDir, input) === 'deny') deny(UPLOAD_GUARD_REASON);
+};
+
 /**
  * Refuses a plan_check call unless its URL is exactly a page as `prepare`
  * returns it, so a query string, fragment or credentials cannot reach CookiePal
@@ -701,6 +878,8 @@ if (process.argv[2] === 'save-plan') {
   hook(saveResult);
 } else if (process.argv[2] === 'save-snippet') {
   hook(saveSnippet);
+} else if (process.argv[2] === 'save-scan') {
+  handleScanStarted();
 } else if (process.argv[2] === 'save-forgotten') {
   hook(saveForgotten);
 } else if (process.argv[2] === 'guard-plan') {
@@ -709,6 +888,8 @@ if (process.argv[2] === 'save-plan') {
   guardConnect();
 } else if (process.argv[2] === 'guard-verify') {
   guardVerify();
+} else if (process.argv[2] === 'guard-upload') {
+  guardUpload();
 } else {
   main()
     .catch(
