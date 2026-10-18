@@ -41,6 +41,7 @@
 - [🔐 What is sent to CookiePal](#-what-is-sent-to-cookiepal)
   - [🆔 The install ID](#-the-install-id)
 - [🔑 Connect a CookiePal account](#-connect-a-cookiepal-account)
+- [🕷️ Scan a domain](#️-scan-a-domain)
 - [🏷️ Install the banner](#️-install-the-banner)
 - [🔄 Update and uninstall](#-update-and-uninstall)
 - [📦 What is in this repository](#-what-is-in-this-repository)
@@ -159,6 +160,10 @@ Only what it takes to count checks and store the result:
 
 Asking CookiePal to confirm your banner is installed sends one more reading, and only when you ask for it. The page is loaded on **your** machine, never by CookiePal, and what goes up is the page's **origin and path**, **when it was read**, the **CookiePal banner script** found there with its query string stripped, that **script's tag** rebuilt from its `id`, `type`, `defer` and `async` attributes alone, and whether the page **could not be read** at all. Nothing else from the page goes with it, and the reading sets that domain's banner status in your CookiePal account.
 
+Running a scan with `/cookiepal:run-scan` sends one more report, only when you ask for it. The crawl runs on **your** machine, never on CookiePal's, and what goes up is the domain's **page count** and whether the crawl was **cut short at the page limit**, each cookie's **name, domain, path, duration and category**, plus a **vendor name** for the cookies that match the open-source catalogue. It is stored as a cookie report labelled a local scan. Cookie values never go up, and a hook refuses a report that differs from what the local crawl produced.
+
+Checking Google Consent Mode with `/cookiepal:check-gcm` sends one reading, only when you ask for it: the page's **origin and path**, whether Consent Mode was **found**, the **names of its consent entries** (plain identifiers such as `ad_storage`) read from the page's own `google_tag_data`, which of them have **no default**, and whether a default was **set late**. Nothing else from the page goes with it, and nothing is stored.
+
 If you connect a CookiePal account with `/cookiepal:connect-account`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without an answer recorded on this machine, and in Claude Code's default permission mode it asks you to confirm a yes in its own dialog before the ID is sent. That dialog is skipped in bypass-permissions mode, and the hook does not run when hooks are turned off. Answering no on a later connect removes a link you made before.
 
 One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check-one-page stop-sharing` sends the install ID once more, on its own, so the checks stored under it can be erased. Nothing else accompanies it.
@@ -195,7 +200,25 @@ The check never needs an account. To use CookiePal on a site you run, connect on
 
 A CookiePal page opens in your browser. If you are already signed in to CookiePal there, press Connect and you are done. If not, sign in, continue with Google, or create a free account (in a new tab), then come back and press Connect. Your password never passes through the terminal, and the plugin never sees it. If you shared an install ID, you are asked whether to link it to the account, every time you connect. The link is deleted after 180 days, when you answer no on a later connect, or straight away with `/cookiepal:check-one-page stop-sharing`.
 
-Once connected, you can ask Claude which domains the account has, with each one's plan, or to add one. A domain added this way starts on the free plan, and an account can add up to 10 a day like this. Nothing is scanned on CookiePal's side: run `/cookiepal:check-one-page` on the new domain to see its cookies.
+Once connected, you can ask Claude which domains the account has, with each one's plan, or to add one. A domain added this way starts on the free plan, and an account can add up to 10 a day like this. Nothing is scanned on CookiePal's side: run `/cookiepal:check-one-page` on the new domain to see its cookies, or run a full crawl with `/cookiepal:run-scan`.
+
+## 🕷️ Scan a domain
+
+```
+/cookiepal:run-scan
+```
+
+Crawls one of the account's connected domains **on this machine**, with the open-source crawl engine from the `@cookiepal-oss/cli` npm package, and uploads what it found as a cookie report labelled a local scan. Nothing crawls on CookiePal's side. The engine is installed into the plugin's own data folder on first use — never bundled, never copied — and runs against your own browser, not a downloaded Chromium.
+
+A multi-page crawl can take minutes: `/cookiepal:run-scan` starts it and waits, polling, rather than guessing at a result. A domain's banner has to be verified first, with one exception — the very first scan of a domain just added with the account tools above, before its banner is even installed. A site whose `robots.txt` blocks the crawler is reported as blocked, with what to change.
+
+Cookies are categorised on this machine from the same public `@cookiepal-oss/cookie-db` catalogue the page check uses. Read the stored report back any time with `get_scan_report`, or set a cookie's category by hand with `classify_cookies`.
+
+```
+/cookiepal:check-gcm
+```
+
+Reads Google Consent Mode on a page, loaded on this machine, and names the problem if there is one — no consent mode found, a default not set, or defaults set too late to matter. Nothing is stored in CookiePal: run it again as many times as it takes to get it right.
 
 ## 🏷️ Install the banner
 
@@ -227,11 +250,11 @@ Then run `/reload-plugins` in any Claude Code session that is already open. To r
 
 ## 📦 What is in this repository
 
-The plugin itself: the manifests, the `/cookiepal:check-one-page`, `/cookiepal:connect-account`, `/cookiepal:verify-installation`, `/cookiepal:detect-stack` and `/cookiepal:install-banner` commands, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack` and `install-banner` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result and each install tag to that check and refuse an install reading no local run produced.
+The plugin itself: the manifests, the `/cookiepal:check-one-page`, `/cookiepal:connect-account`, `/cookiepal:verify-installation`, `/cookiepal:detect-stack`, `/cookiepal:install-banner`, `/cookiepal:run-scan` and `/cookiepal:check-gcm` commands, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack`, `install-banner`, `run-scan` and `check-gcm` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result, each install tag and each start_scan answer to that check, refuse an install reading or a scan report no local run produced, and spawn the crawl a start_scan answer describes.
 
-Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its one dependency. Rebuild it with `pnpm build`; CI fails when it is out of date.
+Plugins install from git with no build step, so `dist/check.mjs` and `dist/scan.mjs` are the committed bundles of `src/` and its dependencies. Rebuild them with `pnpm build`; CI fails when either is out of date. `dist/scan.mjs` is the detached process a scan runs in: it installs `@cookiepal-oss/cli`'s crawl engine into the plugin's own data folder on first use rather than bundling Crawlee or Puppeteer into the plugin itself.
 
-`plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains`, `add_domain`, `get_install_snippet` and `verify_installation` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
+`plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains`, `add_domain`, `get_install_snippet`, `verify_installation`, `start_scan`, `upload_scan_report`, `get_scan_report`, `classify_cookies` and `check_gcm_status` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
 
 ## 🤝 Contributing
 
