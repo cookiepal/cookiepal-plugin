@@ -164,6 +164,8 @@ Running a scan with `/cookiepal:run-scan` sends one more report, only when you a
 
 Checking Google Consent Mode with `/cookiepal:check-gcm` sends one reading, only when you ask for it: the page's **origin and path**, whether Consent Mode was **found**, the **names of its consent entries** (plain identifiers such as `ad_storage`) read from the page's own `google_tag_data`, which of them have **no default**, and whether a default was **set late**. Nothing else from the page goes with it. CookiePal works out the verdict from that reading and stores only the verdict, which sets that domain's Consent Mode status in your CookiePal account, marked as a reading taken on your machine. The page's address and the reading itself are not stored, and a hook refuses a reading that differs from what the local check produced.
 
+Changing a domain's banner through `set_banner_mode` or `customise_banner` sends what you ask for, only when you ask for it: the **banner mode** (`gdpr`, `ccpa` or `both`), the banner's **colours, logo type and colour, and positions**, and the banner's **title, description and button texts** and the preference centre's **title and description** you give for each language. It is saved as that domain's banner settings in your CookiePal account, as the dashboard does. Nothing from the page goes with it, and `regenerate_banner` sends only the domain's name.
+
 If you connect a CookiePal account with `/cookiepal:connect-account`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without an answer recorded on this machine, and in Claude Code's default permission mode it asks you to confirm a yes in its own dialog before the ID is sent. That dialog is skipped in bypass-permissions mode, and the hook does not run when hooks are turned off. Answering no on a later connect removes a link you made before.
 
 One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check-one-page stop-sharing` sends the install ID once more, on its own, so the checks stored under it can be erased. Nothing else accompanies it.
@@ -254,7 +256,7 @@ The plugin itself: the manifests, the `/cookiepal:check-one-page`, `/cookiepal:c
 
 Plugins install from git with no build step, so `dist/check.mjs` and `dist/scan.mjs` are the committed bundles of `src/` and its dependencies. Rebuild them with `pnpm build`; CI fails when either is out of date. `dist/scan.mjs` is the detached process a scan runs in: it installs `@cookiepal-oss/cli`'s crawl engine into the plugin's own data folder on first use rather than bundling Crawlee or Puppeteer into the plugin itself.
 
-`plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains`, `add_domain`, `get_install_snippet`, `verify_installation`, `start_scan`, `upload_scan_report`, `get_scan_report`, `classify_cookies` and `check_gcm_status` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
+`plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains`, `add_domain`, `get_install_snippet`, `verify_installation`, `start_scan`, `upload_scan_report`, `get_scan_report`, `classify_cookies`, `check_gcm_status`, `set_banner_mode`, `customise_banner` and `regenerate_banner` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
 
 ## 🤝 Contributing
 
