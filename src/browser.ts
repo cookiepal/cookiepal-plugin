@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
+import { getDomain } from 'tldts';
 import {
   type ConsentSkipReason,
   clickTargetExpression,
@@ -141,12 +142,20 @@ const exited = (child: ChildProcess, ms: number): Promise<boolean> =>
       );
 
 /**
- * A request is first-party when its host is the page's host, or the page's host
- * without `www.`, or a subdomain of that. Everything else counts as third-party.
+ * The registrable domain from the public suffix list, private domains included,
+ * so `app.cookiepal.io` and `mcp.cookiepal.io` share `cookiepal.io` while
+ * `jack.github.io` and `other.github.io` stay apart. Null for an IP or `localhost`.
+ */
+const site = (host: string): string | null => getDomain(host, { allowPrivateDomains: true });
+
+/**
+ * A request is first-party when its host has the page's registrable domain. A
+ * page with none, an IP or `localhost`, owns only its own host and subdomains.
  */
 export const isThirdParty = (host: string, pageHost: string): boolean => {
-  const root = pageHost.replace(/^www\./, '');
-  return host !== pageHost && host !== root && !host.endsWith(`.${root}`);
+  const page = site(pageHost);
+  if (!page) return host !== pageHost && !host.endsWith(`.${pageHost}`);
+  return site(host) !== page;
 };
 
 /** Which consent button this load presses, and the matchers for finding it. */

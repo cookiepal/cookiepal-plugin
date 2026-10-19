@@ -78,10 +78,15 @@ describe('repository contents', () => {
     }
   });
 
+  // The public suffix list that tldts bundles names thousands of other companies'
+  // hosts, `amazonaws.com` and `*-staging` among them. It is public data, not
+  // ours, so its section of the bundle is the one part left out of this check.
+  const PUBLIC_SUFFIX_LIST = /\/\/ node_modules\/\.pnpm\/tldts@[^\n]*\n[\s\S]*?(?=\n\/\/ (?:node_modules|src)\/)/g;
+
   // The repository's own path is the one company name allowed, since it is in every install command.
   test('no internal hostnames, AWS endpoints or company names', () => {
     for (const { path, text } of files) {
-      const withoutRepo = text.replaceAll(REPO, '');
+      const withoutRepo = text.replaceAll(REPO, '').replace(PUBLIC_SUFFIX_LIST, '');
       for (const pattern of FORBIDDEN) {
         assert.doesNotMatch(withoutRepo, pattern, `${path} matches ${pattern}`);
       }
