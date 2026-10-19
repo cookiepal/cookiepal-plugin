@@ -162,7 +162,7 @@ Asking CookiePal to confirm your banner is installed sends one more reading, and
 
 Running a scan with `/cookiepal:run-scan` sends one more report, only when you ask for it. The crawl runs on **your** machine, never on CookiePal's, and what goes up is the domain's **page count** and whether the crawl was **cut short at the page limit**, each cookie's **name, domain, path, duration and category**, plus a **vendor name** for the cookies that match the open-source catalogue. It is stored as a cookie report labelled a local scan. Cookie values never go up, and a hook refuses a report that differs from what the local crawl produced.
 
-Checking Google Consent Mode with `/cookiepal:check-gcm` sends one reading, only when you ask for it: the page's **origin and path**, whether Consent Mode was **found**, the **names of its consent entries** (plain identifiers such as `ad_storage`) read from the page's own `google_tag_data`, which of them have **no default**, and whether a default was **set late**. Nothing else from the page goes with it, and nothing is stored.
+Checking Google Consent Mode with `/cookiepal:check-gcm` sends one reading, only when you ask for it: the page's **origin and path**, whether Consent Mode was **found**, the **names of its consent entries** (plain identifiers such as `ad_storage`) read from the page's own `google_tag_data`, which of them have **no default**, and whether a default was **set late**. Nothing else from the page goes with it. CookiePal works out the verdict from that reading and stores only the verdict, which sets that domain's Consent Mode status in your CookiePal account, marked as a reading taken on your machine. The page's address and the reading itself are not stored.
 
 If you connect a CookiePal account with `/cookiepal:connect-account`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without an answer recorded on this machine, and in Claude Code's default permission mode it asks you to confirm a yes in its own dialog before the ID is sent. That dialog is skipped in bypass-permissions mode, and the hook does not run when hooks are turned off. Answering no on a later connect removes a link you made before.
 
@@ -218,7 +218,7 @@ Cookies are categorised on this machine from the same public `@cookiepal-oss/coo
 /cookiepal:check-gcm
 ```
 
-Reads Google Consent Mode on a page, loaded on this machine, and names the problem if there is one — no consent mode found, a default not set, or defaults set too late to matter. Nothing is stored in CookiePal: run it again as many times as it takes to get it right.
+Reads Google Consent Mode on a page, loaded on this machine, and names the problem if there is one — no consent mode found, a default not set, or defaults set too late to matter. The result sets that domain's Consent Mode status in CookiePal, so run it again as many times as it takes to get it right: each check replaces the last.
 
 ## 🏷️ Install the banner
 

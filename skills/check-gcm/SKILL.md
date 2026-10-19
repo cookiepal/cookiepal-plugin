@@ -5,7 +5,7 @@ description: Reads Google Consent Mode on a page of one of the user's CookiePal 
 
 # Check Google Consent Mode
 
-One tool. `check_gcm_status` judges a reading of the page's own `google_tag_data` taken on **this machine**; nothing is stored in CookiePal, so this can be run any number of times while a fix is tried. Needs a connected account. If a call says sign-in is needed, follow the `connect-account` skill and come back.
+One tool. `check_gcm_status` judges a reading of the page's own `google_tag_data` taken on **this machine**, and its verdict sets that domain's Consent Mode status in CookiePal, marked as a local reading. It can be run any number of times while a fix is tried: each check replaces the last. Needs a connected account. If a call says sign-in is needed, follow the `connect-account` skill and come back.
 
 `CHECK` below means this command, which prints one JSON object:
 
@@ -40,6 +40,8 @@ Call `check_gcm_status` with the `domainId` the user named (or none, for the acc
 Give the tool's `title` and `fix` as they are — they say what the problem is and what to change. Never diagnose from `reading` yourself; only the server's `problem` decides what is wrong.
 
 - **`none`** — consent mode is set up correctly. Say so plainly.
-- **`consent-mode-not-found`**, **`defaults-not-set`**, **`consent-set-late`** — give the `fix` text, offer to check again once the user has made the change, and say that nothing was changed or stored in CookiePal by this check.
+- **`consent-mode-not-found`**, **`defaults-not-set`**, **`consent-set-late`** — give the `fix` text, offer to check again once the user has made the change, and say that the domain's Consent Mode status in CookiePal now shows this problem until a check passes.
+
+If the call says CookiePal is already checking the domain's Consent Mode, a check started from the dashboard is still running: say so, and offer to check again once it has finished. Do not call it again in a loop.
 
 Never tell the user their site is compliant, only what this reading found. Whether a banner does what a law requires is what `/cookiepal:check-one-page` is for.
