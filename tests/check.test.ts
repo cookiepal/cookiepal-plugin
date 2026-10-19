@@ -224,6 +224,25 @@ describe('isThirdParty', () => {
     assert.equal(isThirdParty('notexample.com', 'example.com'), true);
     assert.equal(isThirdParty('127.0.0.1', 'localhost'), true);
   });
+
+  test('sibling subdomains share the registrable domain', () => {
+    assert.equal(isThirdParty('mcp.cookiepal.io', 'app.cookiepal.io'), false);
+    assert.equal(isThirdParty('cookiepal.io', 'app.cookiepal.io'), false);
+    assert.equal(isThirdParty('static.example.co.uk', 'www.example.co.uk'), false);
+    assert.equal(isThirdParty('other.co.uk', 'www.example.co.uk'), true);
+  });
+
+  test('a private suffix keeps each site apart', () => {
+    assert.equal(isThirdParty('other.github.io', 'jack.github.io'), true);
+    assert.equal(isThirdParty('cdn.jack.github.io', 'jack.github.io'), false);
+  });
+
+  test('a page with no registrable domain owns its host and subdomains only', () => {
+    assert.equal(isThirdParty('localhost', 'localhost'), false);
+    assert.equal(isThirdParty('api.localhost', 'localhost'), false);
+    assert.equal(isThirdParty('127.0.0.1', '127.0.0.1'), false);
+    assert.equal(isThirdParty('example.com', '127.0.0.1'), true);
+  });
 });
 
 describe('install ID consent', () => {
