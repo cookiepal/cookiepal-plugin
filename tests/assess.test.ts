@@ -108,7 +108,7 @@ describe('assess', () => {
           accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
           reject: {
             pressed: true,
-            cookiesAfterClick: [],
+            cookiesAfterClick: [cookie('_ga', 'analytics')],
             newAfterClick: [],
             hostsAfterClick: ['www.google-analytics.com'],
           },
@@ -119,6 +119,10 @@ describe('assess', () => {
     assert.ok(finding.byLaw.every(({ applies }) => applies));
     assert.match(finding.detail, /still set/);
     assert.match(finding.detail, /still being contacted/);
+    assert.deepEqual(
+      finding.cookies.map(({ name }) => name),
+      ['_ga'],
+    );
     assert.deepEqual(finding.hosts, ['www.google-analytics.com']);
   });
 

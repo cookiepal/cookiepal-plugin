@@ -109,8 +109,6 @@ const isCategory = (value: unknown): value is Category =>
 
 const str = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
 
-const count = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
-
 const cookiesOf = (value: unknown): AssessedCookie[] =>
   (Array.isArray(value) ? value : []).flatMap((entry) => {
     if (!isRecord(entry)) return [];
@@ -340,15 +338,15 @@ export const assess = (raw: unknown): Assessment => {
 
   const afterReject = isRecord(summary.afterReject) ? summary.afterReject : null;
   if (afterReject) {
-    const byCategory = isRecord(afterReject.byCategory) ? afterReject.byCategory : {};
-    const survivingTracking = CATEGORIES.filter((category) => category !== 'necessary').reduce(
-      (total, category) => total + count(byCategory[category]),
-      0,
-    );
+    // The reject run's own list rather than the summary's counts, so the finding
+    // names the cookies it is about.
+    const surviving = notNecessary(cookiesOf(reject.cookiesAfterClick).filter(isKnown));
     const stillContacted = hostsOf(afterReject.stillContactedHosts);
-    if (survivingTracking > 0 || stillContacted.length > 0) {
+    if (surviving.length > 0 || stillContacted.length > 0) {
       const found = [
-        survivingTracking > 0 ? `${notNecessaryPhrase(survivingTracking)} ${was(survivingTracking)} still set` : null,
+        surviving.length > 0
+          ? `${notNecessaryPhrase(surviving.length)}${describe(surviving)} ${was(surviving.length)} still set`
+          : null,
         stillContacted.length > 0
           ? `${plural(stillContacted.length, 'third-party host')} ${was(stillContacted.length)} still being contacted`
           : null,
@@ -358,7 +356,7 @@ export const assess = (raw: unknown): Assessment => {
           'active-after-reject',
           'Tracking was still active after the visitor pressed reject',
           `After the check pressed the banner’s reject button, ${list(found)}.`,
-          [],
+          surviving,
           stillContacted,
         ),
       );
