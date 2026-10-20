@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
+import { getDomain } from 'tldts';
 import {
   type ConsentSkipReason,
   clickTargetExpression,
@@ -147,6 +148,13 @@ const LOCATE_POLL_MS = 100;
 const LOCATE_BUDGET_MS = 2000;
 /** How often a settling page is re-read for cookies it set without asking for anything. */
 const PROBE_MS = 250;
+/**
+ * How long an unanswered request keeps the page from counting as quiet. A slow tracker
+ * still on its way is the page working, and what it sets when it lands is exactly what
+ * the reading is for. Past this it is taken for a long poll, a stream or a request that
+ * will never answer, which would otherwise hold every settle to its cap.
+ */
+const OPEN_REQUEST_MS = 5000;
 /*
  * How far past the plan's settle a page that is still working may be followed: the
  * plugin's own caps, imported rather than restated so they cannot drift apart.
@@ -181,8 +189,9 @@ export interface Settle {
  * being cut off there. That is what makes the reading depend on what the page did
  * rather than on how fast the machine running it is.
  *
- * Quiet means no new activity, not zero requests in flight. A page holding one
- * request open — a long poll, an EventSource, a request that never answers — would
+ * Quiet means no new activity and no request still waiting on its answer, for up to
+ * `OPEN_REQUEST_MS` each. Past that a request open is ignored: a page holding one open
+ * for good — a long poll, an EventSource, a request that never answers — would
  * otherwise pin every settle to its ceiling and nothing would ever be read early.
  *
  * Setting a cookie counts as activity too, which is what `probe` is for. A script
@@ -241,12 +250,20 @@ const exited = (child: ChildProcess, ms: number): Promise<boolean> =>
       );
 
 /**
- * A request is first-party when its host is the page's host, or the page's host
- * without `www.`, or a subdomain of that. Everything else counts as third-party.
+ * The registrable domain from the public suffix list, private domains included,
+ * so `app.cookiepal.io` and `mcp.cookiepal.io` share `cookiepal.io` while
+ * `jack.github.io` and `other.github.io` stay apart. Null for an IP or `localhost`.
+ */
+const site = (host: string): string | null => getDomain(host, { allowPrivateDomains: true });
+
+/**
+ * A request is first-party when its host has the page's registrable domain. A
+ * page with none, an IP or `localhost`, owns only its own host and subdomains.
  */
 export const isThirdParty = (host: string, pageHost: string): boolean => {
-  const root = pageHost.replace(/^www\./, '');
-  return host !== pageHost && host !== root && !host.endsWith(`.${root}`);
+  const page = site(pageHost);
+  if (!page) return host !== pageHost && !host.endsWith(`.${pageHost}`);
+  return site(host) !== page;
 };
 
 /** Which consent button this load presses, and the matchers for finding it. */
@@ -558,6 +575,16 @@ const capture = async (
   const sawActivity = () => {
     lastActivityAt = Date.now();
   };
+  /** Requests still waiting on their answer, by session and ID, with when each was sent. */
+  const open = new Map<string, number>();
+  const requestKey = (sessionId: string | undefined, params: Record<string, unknown>) =>
+    `${sessionId ?? ''}\u0000${params.requestId}`;
+  /** The last activity, or now while a request sent less than `OPEN_REQUEST_MS` ago is still open. */
+  const activity = () => {
+    const now = Date.now();
+    for (const sentAt of open.values()) if (now - sentAt < OPEN_REQUEST_MS) return now;
+    return lastActivityAt;
+  };
 
   /**
    * Which cookies exist, by identity rather than by value: a cookie re-set with a
@@ -599,6 +626,7 @@ const capture = async (
         // the check reports, but it is still the page working rather than being finished.
         sawActivity();
         requests++;
+        open.set(requestKey(sessionId, params), Date.now());
         const request = params.request as { url: string };
         try {
           const { protocol, hostname } = new URL(request.url);
@@ -620,6 +648,7 @@ const capture = async (
       case 'Network.loadingFinished':
       case 'Network.loadingFailed':
         sawActivity();
+        open.delete(requestKey(sessionId, params));
         break;
       case 'Page.loadEventFired':
         if (sessionId === mainSession && navigating) onLoad();
@@ -683,7 +712,7 @@ const capture = async (
   // not against nothing, which would read every page as having just changed.
   await probeCookies();
   const settle = await settleUntilQuiet(
-    () => lastActivityAt,
+    activity,
     () => requests,
     probeCookies,
     // A plan asking for no settle is asking for no wait, and still gets none. Otherwise the
@@ -728,7 +757,7 @@ const capture = async (
       sawActivity();
       const { afterClickSettleMs } = consentRequest.plan;
       const afterSettle = await settleUntilQuiet(
-        () => lastActivityAt,
+        activity,
         () => requests,
         probeCookies,
         // As with the arrival settle: a plan asking for no wait after the click still gets none.

@@ -68,8 +68,13 @@ describe('categorise', () => {
     assert.equal(categorise('_gcl_au').category, 'advertisement');
   });
 
-  test('an unknown cookie is other', () => {
-    assert.deepEqual(categorise('definitely_not_a_known_cookie'), { category: 'other', vendor: null });
+  test('an unknown cookie is other, and not known', () => {
+    assert.deepEqual(categorise('definitely_not_a_known_cookie'), { category: 'other', vendor: null, known: false });
+  });
+
+  test('a cookie the catalogue files as other is known', () => {
+    assert.equal(categorise('__Secure-ENID').category, 'other');
+    assert.equal(categorise('__Secure-ENID').known, true);
   });
 
   test('a wildcard entry matches names that start with it', () => {
@@ -93,7 +98,7 @@ describe('parsePlan', () => {
       maxThirdPartyHosts: 200,
       maxHostLength: 253,
     },
-    submit: { tool: 'submit_check', resultVersion: 1 },
+    submit: { tool: 'submit_check', resultVersion: 2 },
   };
 
   test('reads a version 1 plan', () => {
@@ -117,7 +122,7 @@ describe('parsePlan', () => {
   });
 
   test('an unknown resultVersion stops the check and says to update the plugin', () => {
-    const parsed = parsePlan({ ...plan, submit: { tool: 'submit_check', resultVersion: 2 } });
+    const parsed = parsePlan({ ...plan, submit: { tool: 'submit_check', resultVersion: 3 } });
     assert.equal(parsed.ok, false);
     assert.match(!parsed.ok ? parsed.error : '', /Update the plugin/);
   });
@@ -322,6 +327,25 @@ describe('isThirdParty', () => {
     assert.equal(isThirdParty('notexample.com', 'example.com'), true);
     assert.equal(isThirdParty('127.0.0.1', 'localhost'), true);
   });
+
+  test('sibling subdomains share the registrable domain', () => {
+    assert.equal(isThirdParty('mcp.cookiepal.io', 'app.cookiepal.io'), false);
+    assert.equal(isThirdParty('cookiepal.io', 'app.cookiepal.io'), false);
+    assert.equal(isThirdParty('static.example.co.uk', 'www.example.co.uk'), false);
+    assert.equal(isThirdParty('other.co.uk', 'www.example.co.uk'), true);
+  });
+
+  test('a private suffix keeps each site apart', () => {
+    assert.equal(isThirdParty('other.github.io', 'jack.github.io'), true);
+    assert.equal(isThirdParty('cdn.jack.github.io', 'jack.github.io'), false);
+  });
+
+  test('a page with no registrable domain owns its host and subdomains only', () => {
+    assert.equal(isThirdParty('localhost', 'localhost'), false);
+    assert.equal(isThirdParty('api.localhost', 'localhost'), false);
+    assert.equal(isThirdParty('127.0.0.1', '127.0.0.1'), false);
+    assert.equal(isThirdParty('example.com', '127.0.0.1'), true);
+  });
 });
 
 describe('install ID consent', () => {
@@ -336,12 +360,12 @@ describe('install ID consent', () => {
   });
 
   test('nothing is asked or stored before the first answer', () => {
-    assert.deepEqual(readConsent(dataDir()), { asked: false, installId: null });
+    assert.deepEqual(readConsent(dataDir()), { asked: false, installId: null, sharing: false });
   });
 
   test('a no is remembered and creates no ID', () => {
     const dir = dataDir();
-    assert.deepEqual(decline(dir), { asked: true, installId: null });
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
     assert.doesNotMatch(readFileSync(join(dir, 'install-id.json'), 'utf8'), /[0-9a-f]{8}-/);
   });
 
@@ -353,7 +377,7 @@ describe('install ID consent', () => {
     markForgotten(dir, installId ?? '');
     markForgotten(dir, installId ?? '');
     decline(dir);
-    assert.deepEqual(readConsent(dir), { asked: true, installId: null });
+    assert.deepEqual(readConsent(dir), { asked: true, installId: null, sharing: false });
     assert.doesNotMatch(readFileSync(join(dir, 'install-id.json'), 'utf8'), new RegExp(installId ?? 'x'));
   });
 
@@ -366,7 +390,26 @@ describe('install ID consent', () => {
     assert.equal(decline(dir), null);
     assert.equal(readConsent(dir).installId, installId);
 
-    assert.deepEqual(decline(dir, { force: true }), { asked: true, installId: null });
+    assert.deepEqual(decline(dir, { force: true }), { asked: true, installId: null, sharing: false });
+  });
+
+  // Withdrawing takes effect at once: the ID is kept only to finish the erasure.
+  test('a refused withdrawal stops sharing the ID but keeps it', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+
+    assert.equal(decline(dir), null);
+    assert.deepEqual(readConsent(dir), { asked: true, installId, sharing: false });
+  });
+
+  test('withdrawing also deletes the ID from the erasure record', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+    markForgotten(dir, installId ?? '');
+    markForgotten(dir, installId ?? '');
+
+    decline(dir);
+    assert.doesNotMatch(readFileSync(join(dir, 'forgotten-install-ids.json'), 'utf8'), new RegExp(installId ?? 'x'));
   });
 
   test('the erasure marker is per ID, so a stale one does not open the gate', () => {
@@ -388,7 +431,7 @@ describe('install ID consent', () => {
     assert.equal(readConsent(dir).installId, installId);
 
     markForgotten(dir, installId ?? '');
-    assert.deepEqual(decline(dir), { asked: true, installId: null });
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
   });
 
   // A marker written by the version that needed one run still counts, but only as one.
@@ -399,7 +442,7 @@ describe('install ID consent', () => {
 
     assert.equal(decline(dir), null);
     markForgotten(dir, installId ?? '');
-    assert.deepEqual(decline(dir), { asked: true, installId: null });
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
   });
 
   test('a malformed ID is never recorded as erased', () => {
@@ -415,6 +458,15 @@ describe('install ID consent', () => {
     const now = 1_800_000_000_000;
     assert.deepEqual(recordLinkAnswer(dir, false, now), { installId, link: false, at: now });
     assert.deepEqual(readLinkAnswer(dir, now), { installId, link: false, at: now });
+  });
+
+  test('an ID kept only to finish an erasure is never linked', () => {
+    const dir = dataDir();
+    share(dir);
+    assert.equal(decline(dir), null);
+
+    assert.equal(recordLinkAnswer(dir, true), null);
+    assert.equal(readLinkAnswer(dir), null);
   });
 
   // A yes puts server state under the ID again, so an earlier erasure no longer
@@ -696,6 +748,16 @@ describe('buildConsentRun', () => {
     const run = buildConsentRun(pressed(arrival(many)), arrival(), limits);
 
     assert.equal(run.cookiesAfterClick.length, 3);
+  });
+
+  test('the cap never drops a cookie the press set', () => {
+    const seen = Array.from({ length: 5 }, (_, i) => cookie(`seen${i}`));
+
+    const run = buildConsentRun(pressed(arrival([...seen, cookie('_gcl_au')])), arrival(seen), limits);
+
+    assert.equal(run.cookiesAfterClick.length, 3);
+    assert.ok(names(run.cookiesAfterClick).includes('_gcl_au'));
+    assert.deepEqual(names(run.newAfterClick), ['_gcl_au']);
   });
 
   test('hosts after the click are capped, lowercased and deduplicated', () => {
