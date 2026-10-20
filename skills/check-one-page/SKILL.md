@@ -89,6 +89,8 @@ The plugin's hook has already handed the plan to the check. Pass the `ref` from 
 CHECK run <ref from step 2>
 ```
 
+Run it with the Bash tool's `timeout` set to `300000`. Three loads can each wait out the cap, which takes longer than Bash's two-minute default, and a check cut off there reports nothing.
+
 This is the arrival reading and, when the plan asks for the consent action, the accept and reject runs after it. Each run is a separate load in its own fresh profile. Each one waits as long as the plan asks and then until the page stops loading things, up to the plugin's own ten-second cap, so a page that is slow to settle is given the time to finish rather than read half-done. A check usually takes under a minute, and at most a few with the default plan. It refuses a plan version it does not know, or a plan for a different site, and tells the user to update the plugin where that applies. It deletes every temporary profile afterwards, including when the check fails.
 
 Nothing here needs a decision from you: the check finds the buttons, presses them and reports the result. Do not try to press a button yourself, and do not re-run the check to get a different answer.
