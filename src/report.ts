@@ -1,4 +1,5 @@
-import type { Assessment, Finding } from './assess.ts';
+import { type Assessment, consentLine, type Finding } from './assess.ts';
+import { FLAG_KEY } from './laws.ts';
 
 /**
  * Renders the risk read as a self-contained page, so the check can be published
@@ -270,9 +271,7 @@ const grid = (findings: Finding[]): string =>
     )
     .join('') +
   '</tbody></table></div>' +
-  '<p class="shape">Everything marked <strong>flagged</strong> is explained below. <strong>Not flagged</strong> ' +
-  'means that law does not treat it as a problem, and the reason is given with the finding. Neither is a verdict ' +
-  'on the page.</p></section>';
+  `<p class="shape">${FLAG_KEY((term) => `<strong>${term}</strong>`)}</p></section>`;
 
 const cleanBlock = (assessment: Assessment): string =>
   '<article class="finding clean">' +
@@ -281,9 +280,7 @@ const cleanBlock = (assessment: Assessment): string =>
   `cookie${assessment.checked.cookies === 1 ? '' : 's'} and ${assessment.checked.thirdPartyHosts} ` +
   `third-party host${assessment.checked.thirdPartyHosts === 1 ? '' : 's'} before any consent was given, and ` +
   'found nothing that is not strictly necessary. ' +
-  (assessment.checked.consentTested
-    ? 'Pressing the banner’s reject button left nothing running.'
-    : 'The consent action was not tested, so what the banner’s buttons do is not covered.') +
+  consentLine(assessment) +
   `</p><p class="shape">${esc(assessment.scope)}</p>` +
   '</article>' +
   // The only place the laws are set out on their own. With findings, each law

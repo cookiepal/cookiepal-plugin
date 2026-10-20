@@ -21,7 +21,9 @@ interface Output {
   page?: string;
   ref?: string;
   removedCrawlMarkers?: string[];
-  consent?: { asked: boolean; installId: string | null };
+  /** On a refused `consent decline`, the ID it kept. */
+  installId?: string | null;
+  consent?: { asked: boolean; installId: string | null; sharing?: boolean };
   submit: {
     cookies: { name: string; category: string }[];
     thirdPartyHosts: string[];
@@ -119,6 +121,14 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
   '/onetrust': () => ({ body: banner('onetrust', `<div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`) }),
   // No ID and no class: only the body keyword says there is a banner, and only the labels name the buttons.
   '/keyword': () => ({ body: banner('keyword', `<div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`) }),
+  // The same banner, and a "Reject all" outside it: only the box around the keyword is searched.
+  '/keyword-elsewhere': () => ({
+    body: banner(
+      'keyword-elsewhere',
+      `<form><p>Pending invitations</p><button type="button">Reject all</button></form>
+       <div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`,
+    ),
+  }),
   // Reject clears one cookie but keeps tracking anyway: the finding the check exists for.
   '/leaky-reject': () => ({
     body: banner(
@@ -431,7 +441,7 @@ const planFor = (url: string, overrides: Record<string, unknown> = {}) => ({
     maxThirdPartyHosts: 200,
     maxHostLength: 253,
   },
-  submit: { tool: 'submit_check', resultVersion: 1 },
+  submit: { tool: 'submit_check', resultVersion: 2 },
   ...overrides,
 });
 
@@ -733,16 +743,22 @@ describe('install ID consent through the CLI', () => {
     assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, {
       asked: false,
       installId: null,
+      sharing: false,
     });
     assert.deepEqual((await cli(['prepare'], url, env)).output.consent, { asked: false, installId: null });
 
     const { installId } = (await cli(['consent', 'share'], '', env)).output.consent ?? {};
-    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, { asked: true, installId });
-    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, { asked: true, installId });
+    const shared = { asked: true, installId, sharing: true };
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, shared);
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, shared);
     assert.deepEqual((await cli(['prepare'], url, env)).output.consent, { asked: true, installId });
 
     await cli(['consent', 'decline', '--anyway'], '', env);
-    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, { asked: true, installId: null });
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, {
+      asked: true,
+      installId: null,
+      sharing: false,
+    });
   });
 
   // The ID is the only thing that can find the checks stored under it, so losing
@@ -756,7 +772,11 @@ describe('install ID consent through the CLI', () => {
 
     assert.equal(refused.ok, false);
     assert.match(refused.error ?? '', /forget_install/);
+    // The refusal names the ID, so the user can be shown it.
+    assert.equal(refused.installId, installId);
     assert.equal((await cli(['consent', 'status'], '', env)).output.consent?.installId, installId);
+    // And it is no longer sent with checks, though it is kept to finish the erasure.
+    assert.equal((await cli(['prepare'], 'https://example.com', env)).output.consent?.installId, null);
   });
 
   test('--anyway is the deliberate way past that gate', async () => {
@@ -766,7 +786,7 @@ describe('install ID consent through the CLI', () => {
     const forced = (await cli(['consent', 'decline', '--anyway'], '', env)).output;
 
     assert.equal(forced.ok, true);
-    assert.deepEqual(forced.consent, { asked: true, installId: null });
+    assert.deepEqual(forced.consent, { asked: true, installId: null, sharing: false });
   });
 
   // The hook is what opens the gate, and only for an erasure that actually ran.
@@ -1106,6 +1126,16 @@ describe('the consent action', () => {
     assert.equal(consent?.reject.matchedBy, 'text');
     assert.deepEqual(names(consent?.accept.cookiesAfterClick ?? []), ['_ga', '_gcl_au']);
     assert.deepEqual(consent?.reject.cookiesAfterClick, []);
+  });
+
+  test('a banner found by keyword is searched on its own, not the whole page', async () => {
+    const { output } = await withConsent('/keyword-elsewhere');
+    const { reject } = output.submit.consent ?? {};
+
+    // Searched page-wide, the second "Reject all" would make the press ambiguous.
+    assert.equal(reject?.pressed, true);
+    assert.equal(reject?.matchedBy, 'text');
+    assert.deepEqual(reject?.cookiesAfterClick, []);
   });
 
   test('AC3: tracking that keeps going after reject is reported as set after the reject', async () => {

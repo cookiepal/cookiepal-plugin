@@ -87,7 +87,7 @@ Or do it yourself:
   claude plugin install cookiepal@cookiepal
   ```
 
-  Then restart Claude Code, since a session already running will not pick it up.
+  Then run `/reload-plugins` in any Claude Code session that is already open.
 
 Run `/mcp` and you should see `cookiepal` listed as connected. Then:
 
@@ -127,13 +127,13 @@ Every sentence it prints about a law is fixed text that ships with the plugin an
 ### 📄 Four ways to read the result
 
 ```
-/cookiepal:check https://example.com artifact    # default, published to claude.ai
+/cookiepal:check https://example.com artifact    # published to claude.ai, only after you say yes
 /cookiepal:check https://example.com html        # a local HTML file
 /cookiepal:check https://example.com markdown    # a local .md file
 /cookiepal:check https://example.com terminal    # straight to your terminal
 ```
 
-Same words every time. Only the styling differs. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. Set one as your default if you would rather artifacts were never used.
+Same words every time. Only the styling differs. Before publishing anything, the first check asks whether to; **the default is no**, which keeps the read in a local HTML file, and your answer is remembered. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. Set one as your default if you would rather artifacts were never used.
 
 ### 👆 It only ever clicks one button
 
@@ -150,6 +150,7 @@ Only what it takes to count checks and store the result:
 - the page's **origin and path**. The query string and fragment are stripped before anything is sent, because they carry tokens, and the plugin refuses to send an address that still has one;
 - each cookie's **name, domain, path, expiry, flags and category**, but **never its value**, which the server has no field for and rejects outright;
 - the **third-party hosts** the page contacted;
+- what the **accept and reject** presses did: whether each button was pressed, and the same cookie details and third-party hosts as above, read after each press;
 - the **plugin version**;
 - the **country** the check ran from, worked out from your IP address, which is **not stored**;
 - a **random install ID**, only if you agreed to share one.
@@ -180,12 +181,12 @@ If the erasure does not go through, the ID deliberately stays put — it is the 
 
 ## 🔄 Update and uninstall
 
-```
-/plugin marketplace update cookiepal
-/plugin update cookiepal@cookiepal
+```sh
+claude plugin marketplace update cookiepal
+claude plugin update cookiepal@cookiepal
 ```
 
-Restart Claude Code to apply an update. To remove it entirely:
+Then run `/reload-plugins` in any Claude Code session that is already open. To remove it entirely:
 
 ```
 /plugin uninstall cookiepal@cookiepal
