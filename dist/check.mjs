@@ -8908,6 +8908,7 @@ var NOT_A_FINDING = {
 };
 var UNKNOWN_CAVEAT = "Not recognising a cookie is a limit of the open-source catalogue, not evidence that the cookie tracks anyone. Some of these will be a site\u2019s own and entirely ordinary. The finding is that nobody reading this check can tell which, and the site is the only party that can say.";
 var SCOPE = "This was one page, loaded once, from one country, at one moment. It does not show what the rest of the site does, what a visitor from somewhere else would get, or what happens to the data afterwards.";
+var FLAG_KEY = (strong) => `Everything marked ${strong("flagged")} is explained below. ${strong("Not flagged")} means that law does not treat it as a problem, and the reason is given with the finding. Neither is a verdict on the page.`;
 var NO_VERDICT = "This is not a compliance verdict and not legal advice. It reports what the check found on this page and what each law asks for, so that someone can look at the two together.";
 
 // src/assess.ts
@@ -9801,7 +9802,7 @@ var gridTable = (findings) => {
       (finding2) => `| ${cell(finding2.title)} | ${finding2.byLaw.map(({ applies }) => applies ? "flagged" : "not flagged").join(" | ")} |`
     ),
     "",
-    "Everything marked **flagged** is explained below. **Not flagged** means that law does not treat it as a problem, and the reason is given with the finding. Neither is a verdict on the page."
+    FLAG_KEY((term) => `**${term}**`)
   ];
 };
 var build = (assessment, complete) => {
@@ -10164,7 +10165,7 @@ var grid = (findings) => '<section class="section"><p class="eyebrow">What was f
   (finding2) => `<tr><td>${esc(finding2.title)}</td>` + finding2.byLaw.map(
     ({ applies }) => `<td class="mark-cell ${applies ? "yes" : "no"}">${applies ? "flagged" : "not flagged"}</td>`
   ).join("") + "</tr>"
-).join("") + '</tbody></table></div><p class="shape">Everything marked <strong>flagged</strong> is explained below. <strong>Not flagged</strong> means that law does not treat it as a problem, and the reason is given with the finding. Neither is a verdict on the page.</p></section>';
+).join("") + `</tbody></table></div><p class="shape">${FLAG_KEY((term) => `<strong>${term}</strong>`)}</p></section>`;
 var cleanBlock = (assessment) => `<article class="finding clean"><h3>Nothing was flagged on this page</h3><p class="detail">The check read ${assessment.checked.cookies} cookie${assessment.checked.cookies === 1 ? "" : "s"} and ${assessment.checked.thirdPartyHosts} third-party host${assessment.checked.thirdPartyHosts === 1 ? "" : "s"} before any consent was given, and found nothing that is not strictly necessary. ` + consentLine(assessment) + `</p><p class="shape">${esc(assessment.scope)}</p></article><section class="section"><p class="eyebrow">What each law asks for</p>` + assessment.laws.map(
   ({ name, where, asks }) => `<article class="finding clean"><h3>${esc(name)}</h3><p class="shape">Protects ${esc(where)}</p><p class="detail">${esc(asks)}</p></article>`
 ).join("") + "</section>";
