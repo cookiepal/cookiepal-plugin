@@ -216,13 +216,23 @@ describe('assess', () => {
     );
   });
 
-  test('a cookie the catalogue does not know is not described as tracking', () => {
+  test('a cookie the catalogue does not know is not counted as not strictly necessary', () => {
     const assessment = assess(
       result({ cookies: [cookie('wpx_tok', 'other')], summary: { total: 1, byCategory: byCategory({ other: 1 }) } }),
     );
-    const tracking = assessment.findings.find(({ kind }) => kind === 'tracking-before-consent');
-    assert.ok(tracking, 'it still counts as not strictly necessary');
-    assert.doesNotMatch(tracking.detail, /analytics|advertisement|performance/);
+    assert.ok(!assessment.findings.some(({ kind }) => kind === 'tracking-before-consent'));
+    assert.ok(assessment.findings.some(({ kind }) => kind === 'unidentified-cookies'));
+  });
+
+  test('a cookie the catalogue files as other is known, so it is not unidentified', () => {
+    const assessment = assess(
+      result({
+        cookies: [cookie('__Secure-ENID', 'other')],
+        summary: { total: 1, byCategory: byCategory({ other: 1 }) },
+      }),
+    );
+    assert.ok(assessment.findings.some(({ kind }) => kind === 'tracking-before-consent'));
+    assert.ok(!assessment.findings.some(({ kind }) => kind === 'unidentified-cookies'));
   });
 
   test('findings carry the shape of what was found, so nothing has to be truncated', () => {
@@ -440,7 +450,7 @@ describe('renderTerminal', () => {
     assert.match(text, /\| Vendor \| Cookies \|/);
     assert.match(text, /\| Cookie domain \| Cookies \|/);
     assert.match(text, /\| Domain \| Hosts \|/);
-    assert.match(text, /the other 1 are counted under the next finding|the other 1 is counted/);
+    assert.match(text, /Another 1 the catalogue does not know is counted under the next finding/);
   });
 
   test('a cookie name with a pipe cannot break the table it sits in', () => {

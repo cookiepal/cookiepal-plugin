@@ -129,6 +129,9 @@ const NO_VENDOR = 'No vendor named';
 
 const notNecessary = (cookies: AssessedCookie[]) => cookies.filter(({ category }) => category !== 'necessary');
 
+/** In the catalogue, under any category. `category` alone cannot say: unknown cookies are sent as `other` too. */
+const isKnown = ({ name }: AssessedCookie) => categorise(name).known;
+
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 const was = (n: number) => (n === 1 ? 'was' : 'were');
@@ -242,16 +245,17 @@ export const assess = (raw: unknown): Assessment => {
   const findings: Finding[] = [];
   const notes: string[] = [];
 
-  const tracking = notNecessary(cookies);
-  const named = tracking.filter(({ category }) => category !== 'other');
-  const unidentified = cookies.filter(({ category }) => category === 'other');
+  // Not knowing a cookie says nothing about whether it is necessary, so an unknown
+  // one goes only to `unidentified-cookies`. One the catalogue files as `other` is known.
+  const tracking = notNecessary(cookies.filter(isKnown));
+  const unidentified = cookies.filter((cookie) => !isKnown(cookie));
   if (tracking.length > 0) {
     // Grouped by the vendor the catalogue names, which is the fact worth reading
     // when there are more cookies than anyone will read one by one. A cookie whose
     // category is known but whose vendor is not still has to appear, or the counts
     // add up to less than the finding says and the table quietly lies.
-    const identifiable = group(named.map(({ name }) => categorise(name).vendor));
-    const unattributed = named.filter(({ name }) => !categorise(name).vendor).length;
+    const identifiable = group(tracking.map(({ name }) => categorise(name).vendor));
+    const unattributed = tracking.filter(({ name }) => !categorise(name).vendor).length;
     const vendors = [...identifiable, ...(unattributed > 0 ? [{ label: NO_VENDOR, count: unattributed }] : [])];
     const domains = new Set(tracking.map(({ domain }) => domain)).size;
     findings.push(
@@ -259,7 +263,7 @@ export const assess = (raw: unknown): Assessment => {
         'tracking-before-consent',
         'Cookies were set before the visitor agreed to anything',
         `${notNecessaryPhrase(tracking.length)} ${was(tracking.length)} already set when the page finished ` +
-          `loading${describe(named)}.`,
+          `loading${describe(tracking)}.`,
         tracking,
         [],
         {
@@ -270,12 +274,10 @@ export const assess = (raw: unknown): Assessment => {
               ? `From ${plural(identifiable.length, 'identifiable vendor')}, across ` +
                 `${plural(domains, 'cookie domain')}.`
               : `Across ${plural(domains, 'cookie domain')}. The catalogue names no vendor for any of them.`) +
-            // Says where the rest went, so a table that counts fewer than the detail
-            // line does not read as an error.
+            // Says where the unknown ones went, so they are not read as left out.
             (unidentified.length > 0
-              ? ` The table below covers the ${named.length} the catalogue recognises; the other ` +
-                `${unidentified.length} ${unidentified.length === 1 ? 'is' : 'are'} counted under the ` +
-                'next finding.'
+              ? ` Another ${unidentified.length} the catalogue does not know ` +
+                `${unidentified.length === 1 ? 'is' : 'are'} counted under the next finding.`
               : ''),
         },
       ),
@@ -355,7 +357,7 @@ export const assess = (raw: unknown): Assessment => {
   // that sets tracking when a visitor declines, which is worse than one that
   // merely fails to clear what was already there. `active-after-reject` above
   // covers the latter. The delta is the run's own, against its own arrival.
-  const addedAfterReject = notNecessary(cookiesOf(reject.newAfterClick));
+  const addedAfterReject = notNecessary(cookiesOf(reject.newAfterClick).filter(isKnown));
   if (addedAfterReject.length > 0) {
     findings.push(
       finding(

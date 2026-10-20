@@ -59,8 +59,13 @@ describe('categorise', () => {
     assert.equal(categorise('_gcl_au').category, 'advertisement');
   });
 
-  test('an unknown cookie is other', () => {
-    assert.deepEqual(categorise('definitely_not_a_known_cookie'), { category: 'other', vendor: null });
+  test('an unknown cookie is other, and not known', () => {
+    assert.deepEqual(categorise('definitely_not_a_known_cookie'), { category: 'other', vendor: null, known: false });
+  });
+
+  test('a cookie the catalogue files as other is known', () => {
+    assert.equal(categorise('__Secure-ENID').category, 'other');
+    assert.equal(categorise('__Secure-ENID').known, true);
   });
 
   test('a wildcard entry matches names that start with it', () => {
