@@ -108,7 +108,7 @@ describe('assess', () => {
           accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
           reject: {
             pressed: true,
-            cookiesAfterClick: [],
+            cookiesAfterClick: [cookie('_ga', 'analytics')],
             newAfterClick: [],
             hostsAfterClick: ['www.google-analytics.com'],
           },
@@ -119,6 +119,10 @@ describe('assess', () => {
     assert.ok(finding.byLaw.every(({ applies }) => applies));
     assert.match(finding.detail, /still set/);
     assert.match(finding.detail, /still being contacted/);
+    assert.deepEqual(
+      finding.cookies.map(({ name }) => name),
+      ['_ga'],
+    );
     assert.deepEqual(finding.hosts, ['www.google-analytics.com']);
   });
 
@@ -216,13 +220,23 @@ describe('assess', () => {
     );
   });
 
-  test('a cookie the catalogue does not know is not described as tracking', () => {
+  test('a cookie the catalogue does not know is not counted as not strictly necessary', () => {
     const assessment = assess(
       result({ cookies: [cookie('wpx_tok', 'other')], summary: { total: 1, byCategory: byCategory({ other: 1 }) } }),
     );
-    const tracking = assessment.findings.find(({ kind }) => kind === 'tracking-before-consent');
-    assert.ok(tracking, 'it still counts as not strictly necessary');
-    assert.doesNotMatch(tracking.detail, /analytics|advertisement|performance/);
+    assert.ok(!assessment.findings.some(({ kind }) => kind === 'tracking-before-consent'));
+    assert.ok(assessment.findings.some(({ kind }) => kind === 'unidentified-cookies'));
+  });
+
+  test('a cookie the catalogue files as other is known, so it is not unidentified', () => {
+    const assessment = assess(
+      result({
+        cookies: [cookie('__Secure-ENID', 'other')],
+        summary: { total: 1, byCategory: byCategory({ other: 1 }) },
+      }),
+    );
+    assert.ok(assessment.findings.some(({ kind }) => kind === 'tracking-before-consent'));
+    assert.ok(!assessment.findings.some(({ kind }) => kind === 'unidentified-cookies'));
   });
 
   test('findings carry the shape of what was found, so nothing has to be truncated', () => {
@@ -440,7 +454,7 @@ describe('renderTerminal', () => {
     assert.match(text, /\| Vendor \| Cookies \|/);
     assert.match(text, /\| Cookie domain \| Cookies \|/);
     assert.match(text, /\| Domain \| Hosts \|/);
-    assert.match(text, /the other 1 are counted under the next finding|the other 1 is counted/);
+    assert.match(text, /Another 1 the catalogue does not know is counted under the next finding/);
   });
 
   test('a cookie name with a pipe cannot break the table it sits in', () => {
@@ -453,6 +467,29 @@ describe('renderTerminal', () => {
       ),
     );
     assert.ok(text.includes('a\\|b'));
+  });
+
+  test('a clean result never says reject left nothing running when reject was not pressed', () => {
+    const notPressed = assess(
+      result({
+        consent: {
+          tested: true,
+          bannerFound: true,
+          accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
+          reject: {
+            pressed: false,
+            reason: 'no-button',
+            cookiesAfterClick: [],
+            newAfterClick: [],
+            hostsAfterClick: [],
+          },
+        },
+      }),
+    );
+    for (const text of [renderTerminal(notPressed), renderReport(notPressed)]) {
+      assert.doesNotMatch(text, /left nothing running/);
+      assert.match(text, /reject button was not pressed/);
+    }
   });
 
   test('a clean result names every law and still gives the scope', () => {
