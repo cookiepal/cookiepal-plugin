@@ -58,9 +58,10 @@ export const LAWS: Record<LawKey, Law> = {
     where: 'people in the EU and the EEA',
     basis: 'opt-in',
     asks:
-      'Storing or reading anything on a visitor’s device needs their permission first, unless it is ' +
-      'strictly necessary to provide what they asked for. That permission has to be freely given, specific, ' +
-      'informed and unambiguous, and as easy to withdraw as it was to give.',
+      'Under the ePrivacy Directive, which sits alongside the GDPR, storing or reading anything on a ' +
+      'visitor’s device needs their permission first, unless it is strictly necessary to provide what they ' +
+      'asked for. The GDPR sets what that permission has to be: freely given, specific, informed and ' +
+      'unambiguous, and as easy to withdraw as it was to give.',
   },
   ccpa: {
     key: 'ccpa',
