@@ -1,6 +1,6 @@
 /** The plan and result versions this version of the plugin understands. */
 export const PLAN_VERSION = 1;
-export const RESULT_VERSION = 1;
+export const RESULT_VERSION = 2;
 
 export const UPDATE_HINT = 'Update the plugin with /plugin marketplace update cookiepal, then restart Claude Code.';
 

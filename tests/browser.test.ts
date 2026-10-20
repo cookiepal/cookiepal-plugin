@@ -110,6 +110,14 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
   '/onetrust': () => ({ body: banner('onetrust', `<div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`) }),
   // No ID and no class: only the body keyword says there is a banner, and only the labels name the buttons.
   '/keyword': () => ({ body: banner('keyword', `<div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`) }),
+  // The same banner, and a "Reject all" outside it: only the box around the keyword is searched.
+  '/keyword-elsewhere': () => ({
+    body: banner(
+      'keyword-elsewhere',
+      `<form><p>Pending invitations</p><button type="button">Reject all</button></form>
+       <div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`,
+    ),
+  }),
   // Reject clears one cookie but keeps tracking anyway: the finding the check exists for.
   '/leaky-reject': () => ({
     body: banner(
@@ -296,7 +304,7 @@ const planFor = (url: string, overrides: Record<string, unknown> = {}) => ({
     maxThirdPartyHosts: 200,
     maxHostLength: 253,
   },
-  submit: { tool: 'submit_check', resultVersion: 1 },
+  submit: { tool: 'submit_check', resultVersion: 2 },
   ...overrides,
 });
 
@@ -722,6 +730,16 @@ describe('the consent action', () => {
     assert.equal(consent?.reject.matchedBy, 'text');
     assert.deepEqual(names(consent?.accept.cookiesAfterClick ?? []), ['_ga', '_gcl_au']);
     assert.deepEqual(consent?.reject.cookiesAfterClick, []);
+  });
+
+  test('a banner found by keyword is searched on its own, not the whole page', async () => {
+    const { output } = await withConsent('/keyword-elsewhere');
+    const { reject } = output.submit.consent ?? {};
+
+    // Searched page-wide, the second "Reject all" would make the press ambiguous.
+    assert.equal(reject?.pressed, true);
+    assert.equal(reject?.matchedBy, 'text');
+    assert.deepEqual(reject?.cookiesAfterClick, []);
   });
 
   test('AC3: tracking that keeps going after reject is reported as set after the reject', async () => {
