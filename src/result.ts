@@ -130,16 +130,18 @@ export const buildConsentRun = (
   if (!attempt) return NOT_PRESSED('load-failed');
   if (!attempt.pressed || !attempt.after) return NOT_PRESSED(attempt.reason ?? 'no-button');
 
-  const cookiesAfterClick: SubmittedCookie[] = [];
-  for (const cookie of attempt.after.cookies) {
-    if (cookiesAfterClick.length >= limits.maxCookies) break;
-    const submitted = toSubmitted(cookie, limits);
-    if (submitted) cookiesAfterClick.push(submitted);
-  }
+  const after = attempt.after.cookies
+    .map((cookie) => toSubmitted(cookie, limits))
+    .filter((cookie): cookie is SubmittedCookie => cookie !== null);
 
   // Against this run's own arrival, so "the press set this" means exactly that.
+  // Split before the cap, and the press's own cookies first, so a page that
+  // already filled the cap on arrival cannot crowd out what the press set.
   const before = new Set(arrival.cookies.map(key));
-  const newAfterClick = cookiesAfterClick.filter((cookie) => !before.has(key(cookie)));
+  const set = after.filter((cookie) => !before.has(key(cookie)));
+  const kept = after.filter((cookie) => before.has(key(cookie)));
+  const newAfterClick = set.slice(0, limits.maxCookies);
+  const cookiesAfterClick = [...set, ...kept].slice(0, limits.maxCookies);
 
   const hostsAfterClick: string[] = [];
   for (const host of new Set(attempt.after.thirdPartyHosts.map((h) => h.toLowerCase()))) {

@@ -11,6 +11,12 @@ export interface ConsentState {
   /** False until the user has answered once, so the question is asked only on the first check. */
   asked: boolean;
   installId: string | null;
+  /**
+   * Whether the ID goes out with checks. False after a no, and after a stop-sharing
+   * whose erasure has not finished: the ID is then kept only so the erasure can
+   * be run again, and is never sent.
+   */
+  sharing: boolean;
 }
 
 const FILE = 'install-id.json';
@@ -21,9 +27,10 @@ export const readConsent = (dataDir: string): ConsentState => {
   try {
     const saved = JSON.parse(readFileSync(join(dataDir, FILE), 'utf8'));
     const installId = typeof saved.installId === 'string' && INSTALL_ID.test(saved.installId) ? saved.installId : null;
-    return { asked: saved.asked === true, installId };
+    // A file from before `sharing` existed shares whatever ID it holds.
+    return { asked: saved.asked === true, installId, sharing: installId !== null && saved.sharing !== false };
   } catch {
-    return { asked: false, installId: null };
+    return { asked: false, installId: null, sharing: false };
   }
 };
 
@@ -35,7 +42,7 @@ const save = (dataDir: string, state: ConsentState): ConsentState => {
 
 /** Creates the ID only now, after a yes. Answering yes again keeps the existing ID. */
 export const share = (dataDir: string): ConsentState =>
-  save(dataDir, { asked: true, installId: readConsent(dataDir).installId ?? randomUUID() });
+  save(dataDir, { asked: true, installId: readConsent(dataDir).installId ?? randomUUID(), sharing: true });
 
 /**
  * How many clean `forget_install` runs it takes before the ID may be deleted.
@@ -98,14 +105,15 @@ export const clearForgotten = (dataDir: string, installId: string): void => {
 
 /**
  * A no, or a later withdrawal: the answer is kept so the question is not asked
- * again, and any ID is deleted.
+ * again, the ID stops being sent at once, and the ID is deleted.
  *
  * Deleting the ID is the one irreversible step here -- it is the only thing that
- * can find the checks stored under it -- so this refuses while an ID is still
- * stored whose checks have not been erased twice (see `ERASURES_NEEDED`),
+ * can find the checks stored under it -- so that part refuses while an ID is
+ * still stored whose checks have not been erased twice (see `ERASURES_NEEDED`),
  * returning null. That is a real gate rather than a rule written in the skill,
  * in the way `guard-plan` is for query strings: the order holds even when the
- * steps are not followed.
+ * steps are not followed. Refused or not, the ID is never sent again: a
+ * withdrawal takes effect now, and the ID is kept only to finish the erasure.
  *
  * `force` is the deliberate way past it, for a user who wants to stop sending
  * the ID when the erasure cannot be run at all. Their checks then expire on the
@@ -113,6 +121,11 @@ export const clearForgotten = (dataDir: string, installId: string): void => {
  */
 export const decline = (dataDir: string, { force = false } = {}): ConsentState | null => {
   const { installId } = readConsent(dataDir);
-  if (installId && !force && (readForgotten(dataDir)[installId] ?? 0) < ERASURES_NEEDED) return null;
-  return save(dataDir, { asked: true, installId: null });
+  if (installId && !force && (readForgotten(dataDir)[installId] ?? 0) < ERASURES_NEEDED) {
+    save(dataDir, { asked: true, installId, sharing: false });
+    return null;
+  }
+  // The erasure record names the ID too, so it goes with it.
+  if (installId) clearForgotten(dataDir, installId);
+  return save(dataDir, { asked: true, installId: null, sharing: false });
 };

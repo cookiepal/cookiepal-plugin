@@ -82,30 +82,45 @@ const LOCATE = function locate(banner: ConsentPlan['banner'], matchers: ButtonMa
   const clickable = (element: Element | null): element is Element =>
     !!element?.matches(CLICKABLE) && visible(element) && !navigatesAway(element);
 
-  /** The banner, or the document when only a body keyword said there was one. */
-  let root: Element | Document | null = null;
+  /** The banner, or, when only a body keyword said there was one, the boxes around that keyword. */
+  const roots: Element[] = [];
   for (const id of banner.ids) {
     const found = document.getElementById(id);
     if (found) {
-      root = found;
+      roots.push(found);
       break;
     }
   }
-  if (!root) {
+  if (!roots.length) {
     for (const className of banner.classes) {
       const [found] = document.getElementsByClassName(className);
       if (found) {
-        root = found;
+        roots.push(found);
         break;
       }
     }
   }
-  let bannerFound = root !== null;
-  if (!root) {
-    const text = (document.body?.innerText || '').toLowerCase();
-    if (banner.keywords.some((keyword) => text.includes(keyword))) {
-      root = document;
-      bannerFound = true;
+  let bannerFound = roots.length > 0;
+  if (!bannerFound && document.body) {
+    const text = (document.body.innerText || '').toLowerCase();
+    bannerFound = banner.keywords.some((keyword) => text.includes(keyword));
+  }
+  // A keyword says where the banner is, not only that there is one: each visible
+  // piece of text holding it is climbed to the nearest box with a button in it,
+  // and only those boxes are searched, so an "Accept" elsewhere is never pressed.
+  if (!roots.length && bannerFound && document.body) {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      if (!parent || parent.closest('script, style, noscript, template') || !parent.getClientRects().length) continue;
+      const text = (node.textContent || '').replace(/\s+/g, ' ').toLowerCase();
+      if (!banner.keywords.some((keyword) => text.includes(keyword))) continue;
+      for (let box: Element | null = parent; box && box !== document.body; box = box.parentElement) {
+        if ([...box.querySelectorAll(CLICKABLE)].some(clickable)) {
+          if (!roots.includes(box)) roots.push(box);
+          break;
+        }
+      }
     }
   }
 
@@ -123,8 +138,8 @@ const LOCATE = function locate(banner: ConsentPlan['banner'], matchers: ButtonMa
     point: null,
     covered: false,
   };
-  if (!root) return blank;
-  const within = (element: Element) => root === document || (root as Element).contains(element);
+  if (!roots.length) return blank;
+  const within = (element: Element) => roots.some((root) => root.contains(element));
 
   /**
    * Each matcher is tried on its own. One matching button is pressed; two or
@@ -142,7 +157,6 @@ const LOCATE = function locate(banner: ConsentPlan['banner'], matchers: ButtonMa
     return distinct.length === 1 ? distinct[0] : null;
   };
 
-  const scope: ParentNode = root;
   const tiers: [MatchedBy, () => Element | null][] = [
     [
       'tag',
@@ -179,9 +193,9 @@ const LOCATE = function locate(banner: ConsentPlan['banner'], matchers: ButtonMa
     [
       'text',
       () => {
-        const buttons = [...scope.querySelectorAll(CLICKABLE)].filter(
-          (element) => clickable(element) && within(element),
-        );
+        const buttons = roots
+          .flatMap((root) => [...root.querySelectorAll(CLICKABLE)])
+          .filter((element) => clickable(element) && within(element));
         // The server lists the most specific label first, so "reject all" wins over "reject".
         for (const wanted of matchers.texts) {
           const hit = only(
