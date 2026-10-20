@@ -13,9 +13,10 @@
  * site say the same thing. The website's own "are you compliant?" framing is
  * deliberately not carried over.
  *
- *  - GDPR: Regulation (EU) 2016/679 art. 4(11), 6 and 7; ePrivacy Directive
- *    2002/58/EC art. 5(3), which is the provision that actually governs storing
- *    or reading anything on a visitor's device.
+ *  - GDPR: Regulation (EU) 2016/679 recital 30 (online identifiers, such as
+ *    cookie IDs, are personal data), art. 6 (lawful basis), art. 4(11) and 7
+ *    (what consent is, and withdrawing it as easily as giving it) and art. 13
+ *    (telling people what is collected and why, when it is collected).
  *  - CCPA/CPRA: California Civil Code 1798.100 (notice at collection),
  *    1798.120 and 1798.135 (opt out of sale or sharing, and honouring an
  *    opt-out preference signal).
@@ -58,9 +59,9 @@ export const LAWS: Record<LawKey, Law> = {
     where: 'people in the EU and the EEA',
     basis: 'opt-in',
     asks:
-      'Storing or reading anything on a visitor’s device needs their permission first, unless it is ' +
-      'strictly necessary to provide what they asked for. That permission has to be freely given, specific, ' +
-      'informed and unambiguous, and as easy to withdraw as it was to give.',
+      'Personal data, which includes the online identifiers cookies and trackers carry, needs a lawful basis ' +
+      'before it is processed, and for tracking that basis is normally the visitor’s consent. That consent ' +
+      'has to be freely given, specific, informed and unambiguous, and as easy to withdraw as it was to give.',
   },
   ccpa: {
     key: 'ccpa',
@@ -123,8 +124,8 @@ export type FindingKind =
 type Explanations = Record<FindingKind, Record<LawKey, string | null>>;
 
 const OPT_IN_BEFORE_CONSENT =
-  'These were set before the visitor was asked anything, so if any of them are not strictly necessary, ' +
-  'they were set without the permission this law asks for first.';
+  'These were set before the visitor was asked anything, so any of them that carry personal data on the ' +
+  'basis of consent were set before that consent existed.';
 
 export const EXPLANATIONS: Explanations = {
   'tracking-before-consent': {
@@ -139,8 +140,8 @@ export const EXPLANATIONS: Explanations = {
   },
   'unidentified-cookies': {
     gdpr:
-      'A site has to be able to say what it stores on a visitor\u2019s device and why, and to tell them so ' +
-      'before it does. It cannot do that for a cookie it has not identified.',
+      'A site has to tell visitors what personal data it collects and why, at the time it collects it. It ' +
+      'cannot do that for a cookie it has not identified.',
     ccpa:
       'This is a finding here too. Notice at collection means telling visitors what is being collected, ' +
       'which a site can only do for what it can describe.',
