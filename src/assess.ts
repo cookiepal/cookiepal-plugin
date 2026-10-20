@@ -84,6 +84,8 @@ export interface Assessment {
     cookies: number;
     thirdPartyHosts: number;
     consentTested: boolean;
+    /** Whether reject itself was pressed: the consent action can be tested with only accept pressed. */
+    rejectPressed: boolean;
     bannerFound: boolean;
   };
   findings: Finding[];
@@ -227,6 +229,16 @@ const finding = (
     };
   }),
 });
+
+/**
+ * What a clean result can say about the banner's buttons. Only a reject that
+ * was actually pressed can be said to have left nothing running.
+ */
+export const consentLine = ({ checked }: Pick<Assessment, 'checked'>): string => {
+  if (checked.rejectPressed) return 'Pressing the banner’s reject button left nothing running.';
+  if (checked.consentTested) return 'The reject button was not pressed, so what it does is not covered.';
+  return 'The consent action was not tested, so what the banner’s buttons do is not covered.';
+};
 
 /**
  * Reads the `submit_check` result. Anything missing or the wrong shape is read
@@ -395,6 +407,7 @@ export const assess = (raw: unknown): Assessment => {
       cookies: cookies.length,
       thirdPartyHosts: hosts.length,
       consentTested: tested,
+      rejectPressed: reject.pressed === true,
       bannerFound: consent.bannerFound === true,
     },
     findings,

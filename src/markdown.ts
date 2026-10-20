@@ -1,4 +1,4 @@
-import type { Assessment, Finding } from './assess.ts';
+import { type Assessment, consentLine, type Finding } from './assess.ts';
 
 /**
  * The risk read as text (CPL-396), in two shapes that share everything but
@@ -129,11 +129,7 @@ const build = (assessment: Assessment, complete: boolean): string => {
       '',
       '### Nothing was flagged',
       '',
-      `Nothing that is not strictly necessary was set, and no third party was contacted, before any consent was given. ${
-        assessment.checked.consentTested
-          ? 'Pressing the banner’s reject button left nothing running.'
-          : 'The consent action was not tested, so what the banner’s buttons do is not covered.'
-      }`,
+      `Nothing that is not strictly necessary was set, and no third party was contacted, before any consent was given. ${consentLine(assessment)}`,
       '',
       'What each law asks for, all the same:',
       '',

@@ -465,6 +465,29 @@ describe('renderTerminal', () => {
     assert.ok(text.includes('a\\|b'));
   });
 
+  test('a clean result never says reject left nothing running when reject was not pressed', () => {
+    const notPressed = assess(
+      result({
+        consent: {
+          tested: true,
+          bannerFound: true,
+          accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
+          reject: {
+            pressed: false,
+            reason: 'no-button',
+            cookiesAfterClick: [],
+            newAfterClick: [],
+            hostsAfterClick: [],
+          },
+        },
+      }),
+    );
+    for (const text of [renderTerminal(notPressed), renderReport(notPressed)]) {
+      assert.doesNotMatch(text, /left nothing running/);
+      assert.match(text, /reject button was not pressed/);
+    }
+  });
+
   test('a clean result names every law and still gives the scope', () => {
     const text = renderTerminal(assess(result()));
     assert.match(text, /Nothing was flagged/);
