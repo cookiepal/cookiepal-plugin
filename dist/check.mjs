@@ -8814,13 +8814,13 @@ var cookies = cookies_default;
 var exact = /* @__PURE__ */ new Map();
 var prefixes = [];
 for (const entry of cookies) {
-  const match = { category: entry.category, vendor: entry.vendor === "Unknown" ? null : entry.vendor };
+  const match = { category: entry.category, vendor: entry.vendor === "Unknown" ? null : entry.vendor, known: true };
   const name = entry.name.toLowerCase();
   if (entry.wildcard) prefixes.push({ prefix: name, match });
   else if (!exact.has(name)) exact.set(name, match);
 }
 prefixes.sort((a, b) => b.prefix.length - a.prefix.length);
-var UNKNOWN = { category: "other", vendor: null };
+var UNKNOWN = { category: "other", vendor: null, known: false };
 var categorise = (name) => {
   const lower = name.toLowerCase();
   const found = exact.get(lower);
@@ -8839,7 +8839,7 @@ var LAWS = {
     name: "GDPR",
     where: "people in the EU and the EEA",
     basis: "opt-in",
-    asks: "Storing or reading anything on a visitor\u2019s device needs their permission first, unless it is strictly necessary to provide what they asked for. That permission has to be freely given, specific, informed and unambiguous, and as easy to withdraw as it was to give."
+    asks: "Under the ePrivacy Directive, which sits alongside the GDPR, storing or reading anything on a visitor\u2019s device needs their permission first, unless it is strictly necessary to provide what they asked for. The GDPR sets what that permission has to be: freely given, specific, informed and unambiguous, and as easy to withdraw as it was to give."
   },
   ccpa: {
     key: "ccpa",
@@ -8915,7 +8915,6 @@ var CATEGORIES = ["necessary", "functional", "analytics", "performance", "advert
 var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var isCategory = (value) => typeof value === "string" && CATEGORIES.includes(value);
 var str = (value) => typeof value === "string" && value.length > 0 ? value : null;
-var count = (value) => typeof value === "number" && Number.isFinite(value) ? value : 0;
 var cookiesOf = (value) => (Array.isArray(value) ? value : []).flatMap((entry) => {
   if (!isRecord(entry)) return [];
   const name = str(entry.name) ?? "";
@@ -8929,6 +8928,7 @@ var hostsOf = (value) => (Array.isArray(value) ? value : []).flatMap((entry) => 
 });
 var NO_VENDOR = "No vendor named";
 var notNecessary = (cookies2) => cookies2.filter(({ category }) => category !== "necessary");
+var isKnown = ({ name }) => categorise(name).known;
 var plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 var was = (n) => n === 1 ? "was" : "were";
 var notNecessaryPhrase = (n) => n === 1 ? "1 cookie that is not strictly necessary" : `${n} cookies that are not strictly necessary`;
@@ -8972,7 +8972,7 @@ var group = (labels2) => {
   for (const label of labels2) {
     if (label) counts.set(label, (counts.get(label) ?? 0) + 1);
   }
-  return [...counts].map(([label, count2]) => ({ label, count: count2 })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  return [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 };
 var finding = (kind, title, detail, cookies2, hosts, extra = {}) => ({
   kind,
@@ -8994,6 +8994,11 @@ var finding = (kind, title, detail, cookies2, hosts, extra = {}) => ({
     };
   })
 });
+var consentLine = ({ checked }) => {
+  if (checked.rejectPressed) return "Pressing the banner\u2019s reject button left nothing running.";
+  if (checked.consentTested) return "The reject button was not pressed, so what it does is not covered.";
+  return "The consent action was not tested, so what the banner\u2019s buttons do is not covered.";
+};
 var assess = (raw) => {
   const result = isRecord(raw) ? raw : {};
   const cookies2 = cookiesOf(result.cookies);
@@ -9004,27 +9009,25 @@ var assess = (raw) => {
   const tested = consent2.tested === true;
   const findings = [];
   const notes2 = [];
-  const tracking = notNecessary(cookies2);
-  const named = tracking.filter(({ category }) => category !== "other");
-  const unidentified = cookies2.filter(({ category }) => category === "other");
+  const tracking = notNecessary(cookies2.filter(isKnown));
+  const unidentified = cookies2.filter((cookie) => !isKnown(cookie));
   if (tracking.length > 0) {
-    const identifiable = group(named.map(({ name }) => categorise(name).vendor));
-    const unattributed = named.filter(({ name }) => !categorise(name).vendor).length;
+    const identifiable = group(tracking.map(({ name }) => categorise(name).vendor));
+    const unattributed = tracking.filter(({ name }) => !categorise(name).vendor).length;
     const vendors = [...identifiable, ...unattributed > 0 ? [{ label: NO_VENDOR, count: unattributed }] : []];
     const domains = new Set(tracking.map(({ domain }) => domain)).size;
     findings.push(
       finding(
         "tracking-before-consent",
         "Cookies were set before the visitor agreed to anything",
-        `${notNecessaryPhrase(tracking.length)} ${was(tracking.length)} already set when the page finished loading${describe(named)}.`,
+        `${notNecessaryPhrase(tracking.length)} ${was(tracking.length)} already set when the page finished loading${describe(tracking)}.`,
         tracking,
         [],
         {
           groups: vendors,
           groupLabel: { of: "Vendor", unit: "Cookies" },
-          shape: (identifiable.length > 0 ? `From ${plural(identifiable.length, "identifiable vendor")}, across ${plural(domains, "cookie domain")}.` : `Across ${plural(domains, "cookie domain")}. The catalogue names no vendor for any of them.`) + // Says where the rest went, so a table that counts fewer than the detail
-          // line does not read as an error.
-          (unidentified.length > 0 ? ` The table below covers the ${named.length} the catalogue recognises; the other ${unidentified.length} ${unidentified.length === 1 ? "is" : "are"} counted under the next finding.` : "")
+          shape: (identifiable.length > 0 ? `From ${plural(identifiable.length, "identifiable vendor")}, across ${plural(domains, "cookie domain")}.` : `Across ${plural(domains, "cookie domain")}. The catalogue names no vendor for any of them.`) + // Says where the unknown ones went, so they are not read as left out.
+          (unidentified.length > 0 ? ` Another ${unidentified.length} the catalogue does not know ${unidentified.length === 1 ? "is" : "are"} counted under the next finding.` : "")
         }
       )
     );
@@ -9064,15 +9067,11 @@ var assess = (raw) => {
   }
   const afterReject = isRecord(summary.afterReject) ? summary.afterReject : null;
   if (afterReject) {
-    const byCategory = isRecord(afterReject.byCategory) ? afterReject.byCategory : {};
-    const survivingTracking = CATEGORIES.filter((category) => category !== "necessary").reduce(
-      (total, category) => total + count(byCategory[category]),
-      0
-    );
+    const surviving = notNecessary(cookiesOf(reject.cookiesAfterClick).filter(isKnown));
     const stillContacted = hostsOf(afterReject.stillContactedHosts);
-    if (survivingTracking > 0 || stillContacted.length > 0) {
+    if (surviving.length > 0 || stillContacted.length > 0) {
       const found = [
-        survivingTracking > 0 ? `${notNecessaryPhrase(survivingTracking)} ${was(survivingTracking)} still set` : null,
+        surviving.length > 0 ? `${notNecessaryPhrase(surviving.length)}${describe(surviving)} ${was(surviving.length)} still set` : null,
         stillContacted.length > 0 ? `${plural(stillContacted.length, "third-party host")} ${was(stillContacted.length)} still being contacted` : null
       ].filter((part) => part !== null);
       findings.push(
@@ -9080,13 +9079,13 @@ var assess = (raw) => {
           "active-after-reject",
           "Tracking was still active after the visitor pressed reject",
           `After the check pressed the banner\u2019s reject button, ${list(found)}.`,
-          [],
+          surviving,
           stillContacted
         )
       );
     }
   }
-  const addedAfterReject = notNecessary(cookiesOf(reject.newAfterClick));
+  const addedAfterReject = notNecessary(cookiesOf(reject.newAfterClick).filter(isKnown));
   if (addedAfterReject.length > 0) {
     findings.push(
       finding(
@@ -9115,6 +9114,7 @@ var assess = (raw) => {
       cookies: cookies2.length,
       thirdPartyHosts: hosts.length,
       consentTested: tested,
+      rejectPressed: reject.pressed === true,
       bannerFound: consent2.bannerFound === true
     },
     findings,
@@ -9708,8 +9708,8 @@ var groupTable = (finding2, top) => {
   const { of, unit } = finding2.groupLabel ?? { of: "Group", unit: "Count" };
   const shown = finding2.groups.slice(0, top);
   const rest = finding2.groups.slice(top);
-  const restCount = rest.reduce((total, { count: count2 }) => total + count2, 0);
-  const rows = shown.map(({ label, count: count2 }) => `| ${cell(label)} | ${count2} |`);
+  const restCount = rest.reduce((total, { count }) => total + count, 0);
+  const rows = shown.map(({ label, count }) => `| ${cell(label)} | ${count} |`);
   if (rest.length > 0) rows.push(`| _+ ${rest.length} more_ | ${restCount} |`);
   return ["", `| ${of} | ${unit} |`, "| --- | ---: |", ...rows];
 };
@@ -9769,7 +9769,7 @@ var build = (assessment, complete) => {
       "",
       "### Nothing was flagged",
       "",
-      `Nothing that is not strictly necessary was set, and no third party was contacted, before any consent was given. ${assessment.checked.consentTested ? "Pressing the banner\u2019s reject button left nothing running." : "The consent action was not tested, so what the banner\u2019s buttons do is not covered."}`,
+      `Nothing that is not strictly necessary was set, and no third party was contacted, before any consent was given. ${consentLine(assessment)}`,
       "",
       "What each law asks for, all the same:",
       "",
@@ -10098,7 +10098,7 @@ var bars = (finding2) => {
   const rest = finding2.groups.length - shown.length;
   const max = shown[0]?.count ?? 1;
   const drawn = shown.map(
-    ({ label, count: count2 }) => `<div class="bar"><span class="lbl" title="${esc(label)}">${esc(label)}</span><span class="track"><span class="fill" style="width:${Math.max(2, Math.round(count2 / max * 100))}%"></span></span><span class="num">${count2}</span></div>`
+    ({ label, count }) => `<div class="bar"><span class="lbl" title="${esc(label)}">${esc(label)}</span><span class="track"><span class="fill" style="width:${Math.max(2, Math.round(count / max * 100))}%"></span></span><span class="num">${count}</span></div>`
   ).join("");
   const more = rest > 0 ? `<p class="rest">+ ${rest} more, listed in full below.</p>` : "";
   return `<div class="bars">${drawn}</div>${more}`;
@@ -10117,7 +10117,7 @@ var grid = (findings) => '<section class="section"><p class="eyebrow">What was f
     ({ applies }) => `<td class="mark-cell ${applies ? "yes" : "no"}">${applies ? "flagged" : "&#8212;"}</td>`
   ).join("") + "</tr>"
 ).join("") + '</tbody></table></div><p class="shape">Everything marked <strong>flagged</strong> is explained below. A dash means that law does not treat it as a problem, and the reason is given with the finding.</p></section>';
-var cleanBlock = (assessment) => `<article class="finding clean"><h3>Nothing was flagged on this page</h3><p class="detail">The check read ${assessment.checked.cookies} cookie${assessment.checked.cookies === 1 ? "" : "s"} and ${assessment.checked.thirdPartyHosts} third-party host${assessment.checked.thirdPartyHosts === 1 ? "" : "s"} before any consent was given, and found nothing that is not strictly necessary. ` + (assessment.checked.consentTested ? "Pressing the banner\u2019s reject button left nothing running." : "The consent action was not tested, so what the banner\u2019s buttons do is not covered.") + `</p><p class="shape">${esc(assessment.scope)}</p></article><section class="section"><p class="eyebrow">What each law asks for</p>` + assessment.laws.map(
+var cleanBlock = (assessment) => `<article class="finding clean"><h3>Nothing was flagged on this page</h3><p class="detail">The check read ${assessment.checked.cookies} cookie${assessment.checked.cookies === 1 ? "" : "s"} and ${assessment.checked.thirdPartyHosts} third-party host${assessment.checked.thirdPartyHosts === 1 ? "" : "s"} before any consent was given, and found nothing that is not strictly necessary. ` + consentLine(assessment) + `</p><p class="shape">${esc(assessment.scope)}</p></article><section class="section"><p class="eyebrow">What each law asks for</p>` + assessment.laws.map(
   ({ name, where, asks }) => `<article class="finding clean"><h3>${esc(name)}</h3><p class="shape">Protects ${esc(where)}</p><p class="detail">${esc(asks)}</p></article>`
 ).join("") + "</section>";
 var notes = (assessment) => assessment.notes.length === 0 ? "" : `<section class="band"><p class="eyebrow">Worth knowing</p><ul class="notes">${assessment.notes.map((note) => `<li>${esc(note)}</li>`).join("")}</ul></section>`;
