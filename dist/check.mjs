@@ -9948,8 +9948,8 @@ var decline = (dataDir2, { force = false } = {}) => {
 var LINK_ANSWER = "link-answer.json";
 var LINK_ANSWER_TTL_MS = 30 * 6e4;
 var recordLinkAnswer = (dataDir2, link, now = Date.now()) => {
-  const { installId } = readConsent(dataDir2);
-  if (!installId) return null;
+  const { installId, sharing } = readConsent(dataDir2);
+  if (!installId || !sharing) return null;
   if (link) clearForgotten(dataDir2, installId);
   const answer = { installId, link, at: now };
   mkdirSync(dataDir2, { recursive: true });
