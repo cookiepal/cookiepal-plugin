@@ -296,7 +296,7 @@ const planFor = (url: string, overrides: Record<string, unknown> = {}) => ({
     maxThirdPartyHosts: 200,
     maxHostLength: 253,
   },
-  submit: { tool: 'submit_check', resultVersion: 1 },
+  submit: { tool: 'submit_check', resultVersion: 2 },
   ...overrides,
 });
 

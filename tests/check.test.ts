@@ -75,7 +75,7 @@ describe('parsePlan', () => {
       maxThirdPartyHosts: 200,
       maxHostLength: 253,
     },
-    submit: { tool: 'submit_check', resultVersion: 1 },
+    submit: { tool: 'submit_check', resultVersion: 2 },
   };
 
   test('reads a version 1 plan', () => {
@@ -99,7 +99,7 @@ describe('parsePlan', () => {
   });
 
   test('an unknown resultVersion stops the check and says to update the plugin', () => {
-    const parsed = parsePlan({ ...plan, submit: { tool: 'submit_check', resultVersion: 2 } });
+    const parsed = parsePlan({ ...plan, submit: { tool: 'submit_check', resultVersion: 3 } });
     assert.equal(parsed.ok, false);
     assert.match(!parsed.ok ? parsed.error : '', /Update the plugin/);
   });
