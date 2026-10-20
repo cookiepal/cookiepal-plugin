@@ -9519,6 +9519,7 @@ var CLICK_QUIET_MS = 2e3;
 var LOCATE_POLL_MS = 100;
 var LOCATE_BUDGET_MS = 2e3;
 var PROBE_MS = 250;
+var OPEN_REQUEST_MS = 5e3;
 var settleUntilQuiet = async (activity, requests, probe, ceilingMs, quietMs, floorMs) => {
   if (ceilingMs <= 0) return { ms: 0, reachedQuiet: null, requests: 0 };
   const start = Date.now();
@@ -9704,6 +9705,13 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
   const sawActivity = () => {
     lastActivityAt = Date.now();
   };
+  const open = /* @__PURE__ */ new Map();
+  const requestKey = (sessionId, params) => `${sessionId ?? ""}\0${params.requestId}`;
+  const activity = () => {
+    const now = Date.now();
+    for (const sentAt of open.values()) if (now - sentAt < OPEN_REQUEST_MS) return now;
+    return lastActivityAt;
+  };
   let beforeClick = null;
   let cookieFingerprint = "";
   const probeCookies = async () => {
@@ -9733,6 +9741,7 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
       case "Network.requestWillBeSent": {
         sawActivity();
         requests++;
+        open.set(requestKey(sessionId, params), Date.now());
         const request = params.request;
         try {
           const { protocol, hostname } = new URL(request.url);
@@ -9755,6 +9764,7 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
       case "Network.loadingFinished":
       case "Network.loadingFailed":
         sawActivity();
+        open.delete(requestKey(sessionId, params));
         break;
       case "Page.loadEventFired":
         if (sessionId === mainSession && navigating) onLoad();
@@ -9808,7 +9818,7 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
   ).catch(() => true);
   await probeCookies();
   const settle = await settleUntilQuiet(
-    () => lastActivityAt,
+    activity,
     () => requests,
     probeCookies,
     // A plan asking for no settle is asking for no wait, and still gets none. Otherwise the
@@ -9838,7 +9848,7 @@ var capture = async (cdp, url, settleMs, timeoutMs, consentRequest) => {
       sawActivity();
       const { afterClickSettleMs } = consentRequest.plan;
       const afterSettle = await settleUntilQuiet(
-        () => lastActivityAt,
+        activity,
         () => requests,
         probeCookies,
         // As with the arrival settle: a plan asking for no wait after the click still gets none.
