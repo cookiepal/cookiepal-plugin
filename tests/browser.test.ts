@@ -21,7 +21,9 @@ interface Output {
   page?: string;
   ref?: string;
   removedCrawlMarkers?: string[];
-  consent?: { asked: boolean; installId: string | null };
+  /** On a refused `consent decline`, the ID it kept. */
+  installId?: string | null;
+  consent?: { asked: boolean; installId: string | null; sharing?: boolean };
   submit: {
     cookies: { name: string; category: string }[];
     thirdPartyHosts: string[];
@@ -567,16 +569,22 @@ describe('install ID consent through the CLI', () => {
     assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, {
       asked: false,
       installId: null,
+      sharing: false,
     });
     assert.deepEqual((await cli(['prepare'], url, env)).output.consent, { asked: false, installId: null });
 
     const { installId } = (await cli(['consent', 'share'], '', env)).output.consent ?? {};
-    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, { asked: true, installId });
-    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, { asked: true, installId });
+    const shared = { asked: true, installId, sharing: true };
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, shared);
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, shared);
     assert.deepEqual((await cli(['prepare'], url, env)).output.consent, { asked: true, installId });
 
     await cli(['consent', 'decline', '--anyway'], '', env);
-    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, { asked: true, installId: null });
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, {
+      asked: true,
+      installId: null,
+      sharing: false,
+    });
   });
 
   // The ID is the only thing that can find the checks stored under it, so losing
@@ -590,7 +598,11 @@ describe('install ID consent through the CLI', () => {
 
     assert.equal(refused.ok, false);
     assert.match(refused.error ?? '', /forget_install/);
+    // The refusal names the ID, so the user can be shown it.
+    assert.equal(refused.installId, installId);
     assert.equal((await cli(['consent', 'status'], '', env)).output.consent?.installId, installId);
+    // And it is no longer sent with checks, though it is kept to finish the erasure.
+    assert.equal((await cli(['prepare'], 'https://example.com', env)).output.consent?.installId, null);
   });
 
   test('--anyway is the deliberate way past that gate', async () => {
@@ -600,7 +612,7 @@ describe('install ID consent through the CLI', () => {
     const forced = (await cli(['consent', 'decline', '--anyway'], '', env)).output;
 
     assert.equal(forced.ok, true);
-    assert.deepEqual(forced.consent, { asked: true, installId: null });
+    assert.deepEqual(forced.consent, { asked: true, installId: null, sharing: false });
   });
 
   // The hook is what opens the gate, and only for an erasure that actually ran.

@@ -351,12 +351,12 @@ describe('install ID consent', () => {
   });
 
   test('nothing is asked or stored before the first answer', () => {
-    assert.deepEqual(readConsent(dataDir()), { asked: false, installId: null });
+    assert.deepEqual(readConsent(dataDir()), { asked: false, installId: null, sharing: false });
   });
 
   test('a no is remembered and creates no ID', () => {
     const dir = dataDir();
-    assert.deepEqual(decline(dir), { asked: true, installId: null });
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
     assert.doesNotMatch(readFileSync(join(dir, 'install-id.json'), 'utf8'), /[0-9a-f]{8}-/);
   });
 
@@ -368,7 +368,7 @@ describe('install ID consent', () => {
     markForgotten(dir, installId ?? '');
     markForgotten(dir, installId ?? '');
     decline(dir);
-    assert.deepEqual(readConsent(dir), { asked: true, installId: null });
+    assert.deepEqual(readConsent(dir), { asked: true, installId: null, sharing: false });
     assert.doesNotMatch(readFileSync(join(dir, 'install-id.json'), 'utf8'), new RegExp(installId ?? 'x'));
   });
 
@@ -381,7 +381,26 @@ describe('install ID consent', () => {
     assert.equal(decline(dir), null);
     assert.equal(readConsent(dir).installId, installId);
 
-    assert.deepEqual(decline(dir, { force: true }), { asked: true, installId: null });
+    assert.deepEqual(decline(dir, { force: true }), { asked: true, installId: null, sharing: false });
+  });
+
+  // Withdrawing takes effect at once: the ID is kept only to finish the erasure.
+  test('a refused withdrawal stops sharing the ID but keeps it', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+
+    assert.equal(decline(dir), null);
+    assert.deepEqual(readConsent(dir), { asked: true, installId, sharing: false });
+  });
+
+  test('withdrawing also deletes the ID from the erasure record', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+    markForgotten(dir, installId ?? '');
+    markForgotten(dir, installId ?? '');
+
+    decline(dir);
+    assert.doesNotMatch(readFileSync(join(dir, 'forgotten-install-ids.json'), 'utf8'), new RegExp(installId ?? 'x'));
   });
 
   test('the erasure marker is per ID, so a stale one does not open the gate', () => {
@@ -403,7 +422,7 @@ describe('install ID consent', () => {
     assert.equal(readConsent(dir).installId, installId);
 
     markForgotten(dir, installId ?? '');
-    assert.deepEqual(decline(dir), { asked: true, installId: null });
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
   });
 
   // A marker written by the version that needed one run still counts, but only as one.
@@ -414,7 +433,7 @@ describe('install ID consent', () => {
 
     assert.equal(decline(dir), null);
     markForgotten(dir, installId ?? '');
-    assert.deepEqual(decline(dir), { asked: true, installId: null });
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
   });
 
   test('a malformed ID is never recorded as erased', () => {
