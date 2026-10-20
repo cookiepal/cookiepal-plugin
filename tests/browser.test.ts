@@ -222,6 +222,16 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
         new Image().src = 'http://[::1]:${port}/pixel.gif?beacon=' + Date.now();
       }, 150);</script>`,
   }),
+  // Asks for a tracker after load that takes 2.5s to answer, then sets a cookie: the
+  // network is silent the whole time it is on its way.
+  '/slow-tracker': () => ({
+    body: `<!doctype html><title>Slow tracker</title>
+      <script>addEventListener('load', function () {
+        var s = document.createElement('script');
+        s.src = '/slow-script';
+        document.head.appendChild(s);
+      });</script>`,
+  }),
   // Nothing to load and nothing to run: quiet from the moment it is parsed.
   '/quiet': () => ({ body: '<!doctype html><title>Quiet</title><p>Nothing at all.</p>' }),
   // Quiet immediately, but its banner is only put in the page later.
@@ -380,6 +390,12 @@ const server = createServer((request, response) => {
   requests.push(`${request.headers.host}${request.url}`);
   const path = new URL(request.url ?? '/', 'http://x').pathname;
   if (path === '/never') return;
+  if (path === '/slow-script') {
+    setTimeout(() => {
+      response.writeHead(200, { 'Content-Type': 'text/javascript' }).end("document.cookie = 'slow_tracker=1; path=/';");
+    }, 2500);
+    return;
+  }
   if (path === '/redirect') {
     response.writeHead(302, { Location: `http://127.0.0.1:${port}/clean` }).end();
     return;
@@ -994,8 +1010,21 @@ describe('when a reading is taken', () => {
     assert.ok(output.local.settle.ms >= 2000, `waited the plan's settle, got ${output.local.settle.ms}ms`);
   });
 
+  test('a request still on its way holds the settle open until it lands', async () => {
+    // The page is network-silent while the tracker is in flight. Counted as quiet, the
+    // reading would be taken before the tracker arrived and its cookie would be missed.
+    const { output } = await settling('/slow-tracker', { settleMs: 300, timeoutMs: 15_000 });
+    assert.equal(output.ok, true, output.error);
+
+    assert.ok(
+      output.submit.cookies.some((cookie) => cookie.name === 'slow_tracker'),
+      `the slow tracker's cookie was seen, got ${JSON.stringify(output.submit.cookies.map((c) => c.name))}`,
+    );
+    assert.equal(output.local.settle.reachedQuiet, true, 'and the page counted as settled once it landed');
+  });
+
   test('a request that never answers does not hold the settle open', async () => {
-    // Quiet means nothing new, not nothing in flight: one request left open would
+    // An open request holds the settle only for a while: one left open for good would
     // otherwise pin every page to the far cap and nothing would ever be read on time.
     const { output } = await settling('/hang', { settleMs: 2000, timeoutMs: 1500 });
     assert.equal(output.ok, true, output.error);
