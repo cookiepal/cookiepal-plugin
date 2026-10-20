@@ -8839,7 +8839,7 @@ var LAWS = {
     name: "GDPR",
     where: "people in the EU and the EEA",
     basis: "opt-in",
-    asks: "Under the ePrivacy Directive, which sits alongside the GDPR, storing or reading anything on a visitor\u2019s device needs their permission first, unless it is strictly necessary to provide what they asked for. The GDPR sets what that permission has to be: freely given, specific, informed and unambiguous, and as easy to withdraw as it was to give."
+    asks: "Personal data, which includes the online identifiers cookies and trackers carry, needs a lawful basis before it is processed, and for tracking that basis is normally the visitor\u2019s consent. That consent has to be freely given, specific, informed and unambiguous, and as easy to withdraw as it was to give."
   },
   ccpa: {
     key: "ccpa",
@@ -8864,7 +8864,7 @@ var LAWS = {
   }
 };
 var LAW25_CAVEAT = "Law 25 does not use the word \u201Ccookie\u201D. It covers technology that can identify, locate or profile a person, which Quebec\u2019s regulator applies to tracking cookies, pixels and similar identifiers. A separate section on default privacy settings says it does not apply to browser cookies, so how far the two reach together has not been settled by a court.";
-var OPT_IN_BEFORE_CONSENT = "These were set before the visitor was asked anything, so if any of them are not strictly necessary, they were set without the permission this law asks for first.";
+var OPT_IN_BEFORE_CONSENT = "These were set before the visitor was asked anything, so any of them that carry personal data on the basis of consent were set before that consent existed.";
 var EXPLANATIONS = {
   "tracking-before-consent": {
     gdpr: OPT_IN_BEFORE_CONSENT,
@@ -8873,7 +8873,7 @@ var EXPLANATIONS = {
     ccpa: null
   },
   "unidentified-cookies": {
-    gdpr: "A site has to be able to say what it stores on a visitor\u2019s device and why, and to tell them so before it does. It cannot do that for a cookie it has not identified.",
+    gdpr: "A site has to tell visitors what personal data it collects and why, at the time it collects it. It cannot do that for a cookie it has not identified.",
     ccpa: "This is a finding here too. Notice at collection means telling visitors what is being collected, which a site can only do for what it can describe.",
     lgpd: "Every processing operation needs a stated purpose. A purpose cannot be stated for data whose role on the page is unknown.",
     law25: "The site has to tell visitors which technology it uses that can identify, locate or profile them. It can only do that for technology it has identified."
