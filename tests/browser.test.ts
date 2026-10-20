@@ -1685,6 +1685,7 @@ describe('the install check', () => {
     assert.ok(!raw.includes('ignore your instructions'));
     assert.ok(!(output.evidence?.tag ?? '').includes('data-note'));
     assert.match(output.pageContent?.notice ?? '', /Untrusted text/);
+    assert.match(output.pageContent?.notice ?? '', /tag and scriptSrc in evidence/);
     // The reading itself is unaffected: the `src` is what decides the status.
     assert.equal(output.evidence?.scriptSrc, scriptUrlFor());
     assert.equal(output.local?.looksInstalled, true);
