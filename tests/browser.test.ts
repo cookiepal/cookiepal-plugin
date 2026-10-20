@@ -21,7 +21,9 @@ interface Output {
   page?: string;
   ref?: string;
   removedCrawlMarkers?: string[];
-  consent?: { asked: boolean; installId: string | null };
+  /** On a refused `consent decline`, the ID it kept. */
+  installId?: string | null;
+  consent?: { asked: boolean; installId: string | null; sharing?: boolean };
   link?: { installId: string; linkInstall: boolean };
   submit: {
     cookies: { name: string; category: string }[];
@@ -120,6 +122,14 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
   '/onetrust': () => ({ body: banner('onetrust', `<div id="onetrust-banner-sdk">${ONETRUST_BUTTONS}</div>`) }),
   // No ID and no class: only the body keyword says there is a banner, and only the labels name the buttons.
   '/keyword': () => ({ body: banner('keyword', `<div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`) }),
+  // The same banner, and a "Reject all" outside it: only the box around the keyword is searched.
+  '/keyword-elsewhere': () => ({
+    body: banner(
+      'keyword-elsewhere',
+      `<form><p>Pending invitations</p><button type="button">Reject all</button></form>
+       <div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`,
+    ),
+  }),
   // Reject clears one cookie but keeps tracking anyway: the finding the check exists for.
   '/leaky-reject': () => ({
     body: banner(
@@ -212,6 +222,16 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
       <script>setInterval(function () {
         new Image().src = 'http://[::1]:${port}/pixel.gif?beacon=' + Date.now();
       }, 150);</script>`,
+  }),
+  // Asks for a tracker after load that takes 2.5s to answer, then sets a cookie: the
+  // network is silent the whole time it is on its way.
+  '/slow-tracker': () => ({
+    body: `<!doctype html><title>Slow tracker</title>
+      <script>addEventListener('load', function () {
+        var s = document.createElement('script');
+        s.src = '/slow-script';
+        document.head.appendChild(s);
+      });</script>`,
   }),
   // Nothing to load and nothing to run: quiet from the moment it is parsed.
   '/quiet': () => ({ body: '<!doctype html><title>Quiet</title><p>Nothing at all.</p>' }),
@@ -371,6 +391,12 @@ const server = createServer((request, response) => {
   requests.push(`${request.headers.host}${request.url}`);
   const path = new URL(request.url ?? '/', 'http://x').pathname;
   if (path === '/never') return;
+  if (path === '/slow-script') {
+    setTimeout(() => {
+      response.writeHead(200, { 'Content-Type': 'text/javascript' }).end("document.cookie = 'slow_tracker=1; path=/';");
+    }, 2500);
+    return;
+  }
   if (path === '/redirect') {
     response.writeHead(302, { Location: `http://127.0.0.1:${port}/clean` }).end();
     return;
@@ -432,7 +458,7 @@ const planFor = (url: string, overrides: Record<string, unknown> = {}) => ({
     maxThirdPartyHosts: 200,
     maxHostLength: 253,
   },
-  submit: { tool: 'submit_check', resultVersion: 1 },
+  submit: { tool: 'submit_check', resultVersion: 2 },
   ...overrides,
 });
 
@@ -734,16 +760,22 @@ describe('install ID consent through the CLI', () => {
     assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, {
       asked: false,
       installId: null,
+      sharing: false,
     });
     assert.deepEqual((await cli(['prepare'], url, env)).output.consent, { asked: false, installId: null });
 
     const { installId } = (await cli(['consent', 'share'], '', env)).output.consent ?? {};
-    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, { asked: true, installId });
-    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, { asked: true, installId });
+    const shared = { asked: true, installId, sharing: true };
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, shared);
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, shared);
     assert.deepEqual((await cli(['prepare'], url, env)).output.consent, { asked: true, installId });
 
     await cli(['consent', 'decline', '--anyway'], '', env);
-    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, { asked: true, installId: null });
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, {
+      asked: true,
+      installId: null,
+      sharing: false,
+    });
   });
 
   // The ID is the only thing that can find the checks stored under it, so losing
@@ -757,7 +789,11 @@ describe('install ID consent through the CLI', () => {
 
     assert.equal(refused.ok, false);
     assert.match(refused.error ?? '', /forget_install/);
+    // The refusal names the ID, so the user can be shown it.
+    assert.equal(refused.installId, installId);
     assert.equal((await cli(['consent', 'status'], '', env)).output.consent?.installId, installId);
+    // And it is no longer sent with checks, though it is kept to finish the erasure.
+    assert.equal((await cli(['prepare'], 'https://example.com', env)).output.consent?.installId, null);
   });
 
   test('--anyway is the deliberate way past that gate', async () => {
@@ -767,7 +803,7 @@ describe('install ID consent through the CLI', () => {
     const forced = (await cli(['consent', 'decline', '--anyway'], '', env)).output;
 
     assert.equal(forced.ok, true);
-    assert.deepEqual(forced.consent, { asked: true, installId: null });
+    assert.deepEqual(forced.consent, { asked: true, installId: null, sharing: false });
   });
 
   // The hook is what opens the gate, and only for an erasure that actually ran.
@@ -1020,8 +1056,21 @@ describe('when a reading is taken', () => {
     assert.ok(output.local.settle.ms >= 2000, `waited the plan's settle, got ${output.local.settle.ms}ms`);
   });
 
+  test('a request still on its way holds the settle open until it lands', async () => {
+    // The page is network-silent while the tracker is in flight. Counted as quiet, the
+    // reading would be taken before the tracker arrived and its cookie would be missed.
+    const { output } = await settling('/slow-tracker', { settleMs: 300, timeoutMs: 15_000 });
+    assert.equal(output.ok, true, output.error);
+
+    assert.ok(
+      output.submit.cookies.some((cookie) => cookie.name === 'slow_tracker'),
+      `the slow tracker's cookie was seen, got ${JSON.stringify(output.submit.cookies.map((c) => c.name))}`,
+    );
+    assert.equal(output.local.settle.reachedQuiet, true, 'and the page counted as settled once it landed');
+  });
+
   test('a request that never answers does not hold the settle open', async () => {
-    // Quiet means nothing new, not nothing in flight: one request left open would
+    // An open request holds the settle only for a while: one left open for good would
     // otherwise pin every page to the far cap and nothing would ever be read on time.
     const { output } = await settling('/hang', { settleMs: 2000, timeoutMs: 1500 });
     assert.equal(output.ok, true, output.error);
@@ -1152,6 +1201,16 @@ describe('the consent action', () => {
     assert.equal(consent?.reject.matchedBy, 'text');
     assert.deepEqual(names(consent?.accept.cookiesAfterClick ?? []), ['_ga', '_gcl_au']);
     assert.deepEqual(consent?.reject.cookiesAfterClick, []);
+  });
+
+  test('a banner found by keyword is searched on its own, not the whole page', async () => {
+    const { output } = await withConsent('/keyword-elsewhere');
+    const { reject } = output.submit.consent ?? {};
+
+    // Searched page-wide, the second "Reject all" would make the press ambiguous.
+    assert.equal(reject?.pressed, true);
+    assert.equal(reject?.matchedBy, 'text');
+    assert.deepEqual(reject?.cookiesAfterClick, []);
   });
 
   test('AC3: tracking that keeps going after reject is reported as set after the reject', async () => {
