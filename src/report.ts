@@ -1,4 +1,5 @@
 import { type Assessment, consentLine, type Finding } from './assess.ts';
+import { FLAG_KEY } from './laws.ts';
 
 /**
  * Renders the risk read as a self-contained page, so the check can be published
@@ -270,9 +271,7 @@ const grid = (findings: Finding[]): string =>
     )
     .join('') +
   '</tbody></table></div>' +
-  '<p class="shape">Everything marked <strong>flagged</strong> is explained below. <strong>Not flagged</strong> ' +
-  'means that law does not treat it as a problem, and the reason is given with the finding. Neither is a verdict ' +
-  'on the page.</p></section>';
+  `<p class="shape">${FLAG_KEY((term) => `<strong>${term}</strong>`)}</p></section>`;
 
 const cleanBlock = (assessment: Assessment): string =>
   '<article class="finding clean">' +

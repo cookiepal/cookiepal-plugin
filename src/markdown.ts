@@ -1,4 +1,5 @@
 import { type Assessment, consentLine, type Finding } from './assess.ts';
+import { FLAG_KEY } from './laws.ts';
 
 /**
  * The risk read as text (CPL-396), in two shapes that share everything but
@@ -116,7 +117,7 @@ const gridTable = (findings: Finding[]): string[] => {
         `| ${cell(finding.title)} | ${finding.byLaw.map(({ applies }) => (applies ? 'flagged' : 'not flagged')).join(' | ')} |`,
     ),
     '',
-    'Everything marked **flagged** is explained below. **Not flagged** means that law does not treat it as a problem, and the reason is given with the finding. Neither is a verdict on the page.',
+    FLAG_KEY((term) => `**${term}**`),
   ];
 };
 
