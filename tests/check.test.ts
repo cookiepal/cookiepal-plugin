@@ -532,6 +532,16 @@ describe('buildConsentRun', () => {
     assert.equal(run.cookiesAfterClick.length, 3);
   });
 
+  test('the cap never drops a cookie the press set', () => {
+    const seen = Array.from({ length: 5 }, (_, i) => cookie(`seen${i}`));
+
+    const run = buildConsentRun(pressed(arrival([...seen, cookie('_gcl_au')])), arrival(seen), limits);
+
+    assert.equal(run.cookiesAfterClick.length, 3);
+    assert.ok(names(run.cookiesAfterClick).includes('_gcl_au'));
+    assert.deepEqual(names(run.newAfterClick), ['_gcl_au']);
+  });
+
   test('hosts after the click are capped, lowercased and deduplicated', () => {
     const run = buildConsentRun(
       pressed(arrival([], ['B.example', 'b.example', 'c.example', 'd.example'])),
