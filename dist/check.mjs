@@ -9679,9 +9679,9 @@ var readConsent = (dataDir2) => {
   try {
     const saved = JSON.parse(readFileSync(join2(dataDir2, FILE), "utf8"));
     const installId = typeof saved.installId === "string" && INSTALL_ID.test(saved.installId) ? saved.installId : null;
-    return { asked: saved.asked === true, installId };
+    return { asked: saved.asked === true, installId, sharing: installId !== null && saved.sharing !== false };
   } catch {
-    return { asked: false, installId: null };
+    return { asked: false, installId: null, sharing: false };
   }
 };
 var save = (dataDir2, state) => {
@@ -9690,7 +9690,7 @@ var save = (dataDir2, state) => {
 `, { mode: 384 });
   return state;
 };
-var share = (dataDir2) => save(dataDir2, { asked: true, installId: readConsent(dataDir2).installId ?? randomUUID() });
+var share = (dataDir2) => save(dataDir2, { asked: true, installId: readConsent(dataDir2).installId ?? randomUUID(), sharing: true });
 var ERASURES_NEEDED = 2;
 var readForgotten = (dataDir2) => {
   try {
@@ -9727,8 +9727,12 @@ var clearForgotten = (dataDir2, installId) => {
 };
 var decline = (dataDir2, { force = false } = {}) => {
   const { installId } = readConsent(dataDir2);
-  if (installId && !force && (readForgotten(dataDir2)[installId] ?? 0) < ERASURES_NEEDED) return null;
-  return save(dataDir2, { asked: true, installId: null });
+  if (installId && !force && (readForgotten(dataDir2)[installId] ?? 0) < ERASURES_NEEDED) {
+    save(dataDir2, { asked: true, installId, sharing: false });
+    return null;
+  }
+  if (installId) clearForgotten(dataDir2, installId);
+  return save(dataDir2, { asked: true, installId: null, sharing: false });
 };
 
 // src/markdown.ts
@@ -10536,15 +10540,15 @@ var prepare = async () => {
   if (!dataDir) return NO_DATA_DIR;
   sweep(dataDir);
   const ref = saveTarget(dataDir, { page: prepared.page, target: prepared.target });
-  const { asked, installId } = readConsent(dataDir);
-  if (installId) clearForgotten(dataDir, installId);
+  const { asked, installId, sharing } = readConsent(dataDir);
+  if (installId && sharing) clearForgotten(dataDir, installId);
   return {
     ok: true,
     page: prepared.page,
     ref,
     removedCrawlMarkers: prepared.removed,
     pluginVersion: pluginVersion(),
-    consent: { asked, installId },
+    consent: { asked, installId: sharing ? installId : null },
     output: readOutput(dataDir).mode
   };
 };
@@ -10554,7 +10558,7 @@ var output = (mode) => {
   if (!saved) return { ok: false, error: `Use "output" with one of: ${OUTPUT_MODES.join(", ")}.` };
   return { ok: true, output: saved.mode, asked: saved.asked };
 };
-var STILL_STORED = `This machine still has an install ID whose stored checks have not been erased twice. Run the cookiepal server's forget_install with it until two runs have reported nothing remaining: the second catches a check the first could not see yet. To stop sending it anyway, leaving those checks to expire on their own, run "consent decline --anyway".`;
+var STILL_STORED = `The install ID is no longer sent, but this machine keeps it because its stored checks have not been erased twice. Run the cookiepal server's forget_install with it until two runs have reported nothing remaining: the second catches a check the first could not see yet. To delete it anyway, leaving those checks to expire on their own, run "consent decline --anyway".`;
 var consent = (answer, flag) => {
   if (!dataDir) return NO_DATA_DIR;
   if (answer !== "share" && answer !== "decline" && answer !== "status") {
@@ -10562,11 +10566,11 @@ var consent = (answer, flag) => {
   }
   if (answer === "status") {
     const state2 = readConsent(dataDir);
-    return { ok: true, consent: { asked: state2.asked, installId: state2.installId } };
+    return { ok: true, consent: state2 };
   }
   const state = answer === "share" ? share(dataDir) : decline(dataDir, { force: flag === "--anyway" });
-  if (!state) return { ok: false, error: STILL_STORED };
-  return { ok: true, consent: { asked: state.asked, installId: state.installId } };
+  if (!state) return { ok: false, error: STILL_STORED, installId: readConsent(dataDir).installId };
+  return { ok: true, consent: state };
 };
 var run = async (ref) => {
   if (!dataDir) return NO_DATA_DIR;
