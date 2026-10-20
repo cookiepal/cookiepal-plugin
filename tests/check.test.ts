@@ -460,6 +460,15 @@ describe('install ID consent', () => {
     assert.deepEqual(readLinkAnswer(dir, now), { installId, link: false, at: now });
   });
 
+  test('an ID kept only to finish an erasure is never linked', () => {
+    const dir = dataDir();
+    share(dir);
+    assert.equal(decline(dir), null);
+
+    assert.equal(recordLinkAnswer(dir, true), null);
+    assert.equal(readLinkAnswer(dir), null);
+  });
+
   // A yes puts server state under the ID again, so an earlier erasure no longer
   // counts towards deleting it: the stop-sharing gate has to start over.
   test('a yes to linking resets the erasures recorded for the ID', () => {

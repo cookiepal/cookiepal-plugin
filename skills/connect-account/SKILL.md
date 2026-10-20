@@ -19,7 +19,7 @@ COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/dist/chec
 
 ### 1. Ask before linking the install ID
 
-Run `CHECK consent status`. It changes nothing. If it returns no `installId`, the user never shared one: connect without it in step 2, and do not ask about sharing here. Never run `CHECK consent share` from this skill.
+Run `CHECK consent status`. It changes nothing. If it returns no `installId`, or `sharing` is false, the ID is not shared: connect without it in step 2, and do not ask about sharing here. Never run `CHECK consent share` from this skill.
 
 If there is an `installId`, the user agreed to share it to count unique installs. Linking it to an account is a different use, and agreeing to share it is not agreeing to link it, so ask this every time, with "No" as the default and first option:
 

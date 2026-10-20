@@ -153,11 +153,12 @@ export interface LinkAnswer {
  * the ID: agreeing to send it with checks is not agreeing to tie it to an
  * account. Read by the PreToolUse hook on `connect_account`, so the ID goes
  * with a link answer only when this machine has one from the user. Null when
- * no ID is stored, since there is then nothing to link.
+ * no ID is shared, since there is then nothing to link.
  */
 export const recordLinkAnswer = (dataDir: string, link: boolean, now = Date.now()): LinkAnswer | null => {
-  const { installId } = readConsent(dataDir);
-  if (!installId) return null;
+  const { installId, sharing } = readConsent(dataDir);
+  // An ID kept only to finish an erasure is not shared, so it is not linked either.
+  if (!installId || !sharing) return null;
   // A yes is about to put server state under the ID again, as `prepare` does,
   // so an erasure recorded before it no longer covers everything stored.
   if (link) clearForgotten(dataDir, installId);
