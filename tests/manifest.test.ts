@@ -52,12 +52,17 @@ describe('plugin and marketplace manifests', () => {
 });
 
 describe('the skills are the commands', () => {
-  const skills = readdirSync(join(root, 'skills'));
-  const frontmatter = (skill: string) => {
-    const text = readFileSync(join(root, 'skills', skill, 'SKILL.md'), 'utf8');
-    return text.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '';
-  };
-  const field = (skill: string, key: string) => frontmatter(skill).match(new RegExp(`^${key}: (.*)$`, 'm'))?.[1];
+  const skills = readdirSync(join(root, 'skills'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const frontmatters = new Map(
+    skills.map((skill) => {
+      const text = readFileSync(join(root, 'skills', skill, 'SKILL.md'), 'utf8');
+      return [skill, text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)?.[1] ?? ''];
+    }),
+  );
+  const field = (skill: string, key: string) =>
+    frontmatters.get(skill)?.match(new RegExp(`^${key}: (.*?)\\r?$`, 'm'))?.[1];
 
   // A command file with a skill's name stands in for the skill: asking for the
   // skill then returns "already loaded above" and its SKILL.md never loads.
@@ -74,8 +79,7 @@ describe('the skills are the commands', () => {
     for (const skill of skills) assert.equal(field(skill, 'name'), skill);
   });
 
-  // Unquoted, `[domain]` is a YAML list, not the hint shown after the command.
-  test('every skill that takes an argument has a quoted argument-hint', () => {
+  test('every skill that takes an argument has an argument-hint', () => {
     for (const skill of [
       'check-one-page',
       'check-gcm',
@@ -84,7 +88,16 @@ describe('the skills are the commands', () => {
       'verify-installation',
       'match-site-design',
     ]) {
-      assert.match(field(skill, 'argument-hint') ?? '', /^'[^']+'$/, `skills/${skill}/SKILL.md`);
+      assert.ok(field(skill, 'argument-hint'), `skills/${skill}/SKILL.md has no argument-hint`);
+    }
+  });
+
+  // Unquoted, `[domain]` is a YAML list, not the hint shown after the command.
+  test('every argument-hint is quoted', () => {
+    for (const skill of skills) {
+      const hint = field(skill, 'argument-hint');
+      if (hint === undefined) continue;
+      assert.match(hint, /^(?:'(?:[^']|'')+'|"[^"]+")$/, `skills/${skill}/SKILL.md`);
     }
   });
 });
