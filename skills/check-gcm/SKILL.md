@@ -1,6 +1,7 @@
 ---
 name: check-gcm
-description: Reads Google Consent Mode on a page of one of the user's CookiePal domains, loaded on this machine, and names the problem if there is one. Use when the user runs /cookiepal:check-gcm, asks to check Google Consent Mode, GCM, or their Google tag's consent status, asks why CookiePal shows a GCM problem, or asks whether consent defaults are set correctly before Google's tags load.
+description: Check Google Consent Mode on one of your CookiePal domains
+when_to_use: Reads Google Consent Mode on a page of one of the user's CookiePal domains, loaded on this machine, and names the problem if there is one. Use when the user runs /cookiepal:check-gcm, asks to check Google Consent Mode, GCM, or their Google tag's consent status, asks why CookiePal shows a GCM problem, or asks whether consent defaults are set correctly before Google's tags load.
 argument-hint: '[url]'
 ---
 

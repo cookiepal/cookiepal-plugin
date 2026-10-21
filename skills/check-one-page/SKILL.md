@@ -1,6 +1,7 @@
 ---
 name: check-one-page
-description: Checks one web page for cookies and trackers set before consent, and for what changes after accept and after reject, by loading it in a fresh temporary browser profile on the user's machine, then explains what was found against GDPR, CCPA, LGPD and Law 25. Use when the user runs /cookiepal:check-one-page, asks whether a page sets cookies before consent, asks what a banner's accept or reject button actually does, asks what a page's cookies mean under a privacy law, or asks to stop sharing their CookiePal install ID.
+description: Check one page for cookies and trackers set before consent
+when_to_use: Checks one web page for cookies and trackers set before consent, and for what changes after accept and after reject, by loading it in a fresh temporary browser profile on the user's machine, then explains what was found against GDPR, CCPA, LGPD and Law 25. Use when the user runs /cookiepal:check-one-page, asks whether a page sets cookies before consent, asks what a banner's accept or reject button actually does, asks what a page's cookies mean under a privacy law, or asks to stop sharing their CookiePal install ID.
 argument-hint: '<url> [artifact | html | markdown | terminal]'
 ---
 

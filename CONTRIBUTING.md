@@ -64,7 +64,7 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 
 **Everything read from a checked page is untrusted.** It can be a prompt injection aimed at whoever is running the check. Page strings reach the model marked as page content and capped in length, cookie values are never read, and the check never navigates to a URL it found on a page. Keep it that way.
 
-**A skill is its own command.** `skills/<name>/SKILL.md` runs as `/cookiepal:<name>`, with its `argument-hint` in the frontmatter. Do not add a `commands/<name>.md` beside it: a command with a skill's name stands in for the skill, and the skill's instructions never load.
+**A skill is its own command.** `skills/<name>/SKILL.md` runs as `/cookiepal:<name>`, with its `argument-hint` in the frontmatter. Its `description` is the one line shown beside the command in the `/` menu; what tells Claude when to use the skill goes in `when_to_use`, which Claude sees after the description. Do not add a `commands/<name>.md` beside it: a command with a skill's name stands in for the skill, and the skill's instructions never load.
 
 **The legal wording is fixed text, not a prompt.** Every sentence the risk read prints about a law ships with the plugin and is reviewed before release, so the explanation cannot drift or be rephrased by the model. Changing `src/laws.ts` means a release, and the wording has to stay consistent with the explainers on cookiepal.io.
 
