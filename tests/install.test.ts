@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
-import { findTagExpression, NOT_FOUND, parseFoundTag, verifyDecision } from '../src/install.ts';
+import { findTagExpression, parseFoundTag, verifyDecision } from '../src/install.ts';
 import { readSnippet, saveEvidence, saveSnippet } from '../src/savedPlans.ts';
 
 const dirs: string[] = [];
@@ -43,7 +43,7 @@ describe('the in-page tag finder', () => {
     const expression = findTagExpression();
 
     assert.match(expression, /^\(function find\(/);
-    assert.match(expression, /\)\(2048, 1024, 10\)$/);
+    assert.match(expression, /\)\(2048, 1024, 10, 4000\)$/);
     assert.equal(expression.includes('import'), false);
     assert.equal(expression.includes('require'), false);
   });
@@ -69,8 +69,15 @@ const page = (matches: { src?: unknown; tag?: unknown }[], count?: number) => ({
 });
 
 describe('parseFoundTag', () => {
+  /** A reading the page did return. */
+  const parsed = (value: unknown, expected?: string) => {
+    const found = parseFoundTag(value, expected);
+    assert.ok(found, 'a reading in the right shape is never null');
+    return found;
+  };
+
   test('keeps a reading that found a banner script', () => {
-    const found = parseFoundTag(page([{ src: SCRIPT_URL, tag: `<script id="cookiepal" src="${SCRIPT_URL}">` }]));
+    const found = parsed(page([{ src: SCRIPT_URL, tag: `<script id="cookiepal" src="${SCRIPT_URL}">` }]));
 
     assert.equal(found.scriptSrc, SCRIPT_URL);
     assert.equal(found.count, 1);
@@ -78,15 +85,23 @@ describe('parseFoundTag', () => {
 
   // The page decides what it returns, so anything but a usable reading is
   // "no tag found" rather than an error that would stop the verification.
-  test('reads anything unusable as no tag found', () => {
+  test('reads anything unusable as no reading at all, never as no tag found', () => {
     for (const value of [null, undefined, 'a string', [], 42, {}, { matches: 'no' }]) {
-      assert.deepEqual(parseFoundTag(value), NOT_FOUND, JSON.stringify(value) ?? 'undefined');
+      assert.equal(parseFoundTag(value), null, JSON.stringify(value) ?? 'undefined');
+    }
+  });
+
+  test('carries whether the banner said it was running, and only a literal true counts', () => {
+    const tag = [{ src: SCRIPT_URL, tag: null }];
+    assert.equal(parsed({ ...page(tag), bannerRan: true }).bannerRan, true);
+    for (const bannerRan of [false, 'true', 1, undefined]) {
+      assert.equal(parsed({ ...page(tag), bannerRan }).bannerRan, false, String(bannerRan));
     }
   });
 
   // Without a `src` the server has nothing to compare, so a tag alone is not an install.
   test('drops a match with no src, keeping the page’s count', () => {
-    const found = parseFoundTag(page([{ src: null, tag: '<script id="cookiepal">' }], 2));
+    const found = parsed(page([{ src: null, tag: '<script id="cookiepal">' }], 2));
 
     assert.equal(found.scriptSrc, null);
     assert.equal(found.tag, null);
@@ -97,7 +112,7 @@ describe('parseFoundTag', () => {
   // upload fail by returning one, and nothing carries prose to the model.
   test('drops a tag that is not printable ASCII on one line', () => {
     for (const tag of ['<script\nsrc="x">', '<script \u202esrc="x">', '<script \udb40\udc41>', '<\u00fc>']) {
-      const found = parseFoundTag(page([{ src: SCRIPT_URL, tag }]));
+      const found = parsed(page([{ src: SCRIPT_URL, tag }]));
       assert.equal(found.tag, null, tag);
       // The reading itself survives: the `src` is what decides the status.
       assert.equal(found.scriptSrc, SCRIPT_URL);
@@ -105,7 +120,7 @@ describe('parseFoundTag', () => {
   });
 
   test('drops a src that is too long to be one', () => {
-    const found = parseFoundTag(page([{ src: `https://x.test/${'a'.repeat(2048)}`, tag: null }]));
+    const found = parsed(page([{ src: `https://x.test/${'a'.repeat(2048)}`, tag: null }]));
 
     assert.equal(found.scriptSrc, null);
   });
@@ -114,7 +129,7 @@ describe('parseFoundTag', () => {
   // first in document order, and the domain's own install is still installed.
   test('prefers the domain’s own script over another site’s above it', () => {
     const other = 'https://cdn.test/client_data/someone-else/script.js';
-    const found = parseFoundTag(
+    const found = parsed(
       page([
         { src: other, tag: `<script id="cookiepal" src="${other}">` },
         { src: SCRIPT_URL, tag: `<script id="cookiepal" src="${SCRIPT_URL}">` },
@@ -128,14 +143,14 @@ describe('parseFoundTag', () => {
 
   test('reports the first match when none is the domain’s own', () => {
     const other = 'https://cdn.test/client_data/someone-else/script.js';
-    const found = parseFoundTag(page([{ src: other, tag: null }]), SCRIPT_URL);
+    const found = parsed(page([{ src: other, tag: null }]), SCRIPT_URL);
 
     assert.equal(found.scriptSrc, other);
   });
 
   // A cache-buster is the same file; the server compares origin and path too.
   test('matches the domain’s own script ignoring a query or fragment', () => {
-    const found = parseFoundTag(
+    const found = parsed(
       page([
         { src: 'https://cdn.test/client_data/other/script.js', tag: null },
         { src: `${SCRIPT_URL}?v=3`, tag: null },
@@ -147,8 +162,8 @@ describe('parseFoundTag', () => {
   });
 
   test('never returns a negative or fractional count', () => {
-    assert.equal(parseFoundTag(page([], -5)).count, 0);
-    assert.equal(parseFoundTag(page([{ src: SCRIPT_URL, tag: null }], 2.7)).count, 2);
+    assert.equal(parsed(page([], -5)).count, 0);
+    assert.equal(parsed(page([{ src: SCRIPT_URL, tag: null }], 2.7)).count, 2);
   });
 });
 

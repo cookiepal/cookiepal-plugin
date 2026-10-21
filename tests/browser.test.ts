@@ -96,6 +96,18 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
       <script id="cookiepal" type="text/javascript" src="http://127.0.0.1:${port}/client_data/${S3_ID}/script.js"></script>
       <!-- End cookiepal banner -->`,
   }),
+  // The domain's own tag, retyped by an auto-blocking consent tool so it never runs.
+  '/installed-blocked': () => ({
+    body: `<!doctype html><title>Blocked</title>
+      <script id="cookiepal" type="text/plain" src="http://127.0.0.1:${port}/client_data/${S3_ID}/script.js"></script>`,
+  }),
+  // The domain's own tag, on a page that breaks the in-page read: a stand-in for
+  // a read that times out, or a page that navigates away under it.
+  '/installed-unreadable': () => ({
+    body: `<!doctype html><title>Unreadable</title>
+      <script id="cookiepal" type="text/javascript" src="http://127.0.0.1:${port}/client_data/${S3_ID}/script.js"></script>
+      <script>document.querySelectorAll = () => { throw new Error('no'); };</script>`,
+  }),
   // A real CookiePal tag built for another domain: a tag, and still not this
   // domain's install, which only the server can tell.
   '/other-site-tag': () => ({
@@ -490,9 +502,11 @@ const server = createServer((request, response) => {
     return;
   }
   // The banner scripts the install-check pages load. Served so those pages
-  // behave as a real site does; the check reads the tag, never the script.
+  // behave as a real site does: like the real script, this one says it is running.
   if (path.startsWith('/client_data/')) {
-    response.writeHead(200, { 'Content-Type': 'text/javascript' }).end('/* banner */');
+    response
+      .writeHead(200, { 'Content-Type': 'text/javascript' })
+      .end('window.cookiepal = { ui: { bannerIsInstalled: true } };');
     return;
   }
   const page = pages[path];
@@ -1570,8 +1584,11 @@ describe('the install check', () => {
       looksInstalled: boolean;
       expectedScriptUrl: string;
       bannerScriptsFound: number;
+      redirected: boolean;
+      readFailed: boolean;
+      bannerDidNotRun: boolean;
     };
-    pageContent?: { notice: string; title: string | null; tag: string | null };
+    pageContent?: { notice: string; title: string | null; landedOn: string | null; tag: string | null };
   }
 
   /** What the PostToolUse hook receives after get_install_snippet. */
@@ -1612,6 +1629,7 @@ describe('the install check', () => {
     assert.match(output.evidence?.tag ?? '', /^<script id="cookiepal"/);
     assert.equal(output.local?.looksInstalled, true);
     assert.equal(output.local?.bannerScriptsFound, 1);
+    assert.equal(output.local?.bannerDidNotRun, false);
     assert.equal(output.local?.httpStatus, 200);
     noProfileLeft(temp);
   });
@@ -1627,6 +1645,37 @@ describe('the install check', () => {
     assert.ok(!raw.includes('SECRET-TOKEN'), 'the query string reached the evidence');
     // Inside a minute of now, so the server's freshness window accepts it.
     assert.ok(Math.abs(Date.now() - Date.parse(evidence?.seenAt ?? '')) < 60_000);
+  });
+
+  // The tag is in the page, but the banner never says it is running, so no banner
+  // shows: sent as no tag, which the server records as failed, as the crawler would.
+  test('a tag whose banner never runs is sent as no tag, and says why', async () => {
+    const { output } = await verifyRef('/installed-blocked');
+
+    assert.equal(output.evidence?.scriptSrc, null);
+    assert.equal(output.evidence?.tag, null);
+    assert.equal(output.evidence?.loadError, null);
+    assert.equal(output.local?.bannerDidNotRun, true);
+    assert.equal(output.local?.looksInstalled, false);
+    assert.equal(output.local?.bannerScriptsFound, 1);
+  });
+
+  test('a read that never comes back is unread, never a missing tag', async () => {
+    const { output } = await verifyRef('/installed-unreadable');
+
+    assert.equal(output.evidence?.loadError, 'load-failed');
+    assert.equal(output.evidence?.scriptSrc, null);
+    assert.equal(output.local?.pageNotRead, true);
+    assert.equal(output.local?.readFailed, true);
+  });
+
+  test('a redirect to another site is unread, not judged as this domain', async () => {
+    const { output } = await verifyRef('/redirect');
+
+    assert.equal(output.evidence?.loadError, 'load-failed');
+    assert.equal(output.local?.pageNotRead, true);
+    assert.equal(output.local?.redirected, true);
+    assert.equal(output.pageContent?.landedOn, '127.0.0.1');
   });
 
   test('a page with no CookiePal tag reads as nothing found', async () => {
