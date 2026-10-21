@@ -49,8 +49,8 @@ use the current working directory and say so.
 
 ### 2. Find the design tokens
 
-Look in these places, skipping `node_modules`, build output (`dist`, `build`, `.next`, `.nuxt`,
-`.output`, `.svelte-kit`) and vendored code:
+Look in these places, skipping `node_modules` (except for the one palette lookup below), build
+output (`dist`, `build`, `.next`, `.nuxt`, `.output`, `.svelte-kit`) and vendored code:
 
 - **Tailwind v4** — `@theme` blocks in the CSS files, whose `--color-*` variables are the palette.
 - **CSS variables** — custom properties on `:root`, `html` or a light-theme selector in the global
@@ -93,8 +93,9 @@ was changed in the dashboard. Change nothing and call nothing.
 
 ### 4. Choose a position
 
-The default is `bottom`, CookiePal's own. Propose another `bannerTypePosition` only when the repo
-shows a reason, and name that reason:
+Always propose a `bannerTypePosition`, because step 7 saves exactly what step 6 shows. It is
+`bottom`, CookiePal's own default, unless the repo shows a reason for another, and then name that
+reason:
 
 - A full-width bar fixed to the bottom of the page (a mobile nav, a sticky cart): `top`.
 - A widget fixed to the bottom-right corner (a chat launcher): `bottomLeft`, and `bannerFabPosition`
@@ -164,7 +165,8 @@ Call the cookiepal server's `customise_banner` tool with:
 
 - `domainId` when the user named a domain, and without it otherwise,
 - `colors`: the `colors` object from the last `CHECK design`, exactly as printed, all four slots,
-- `positions`: only the positions step 4 proposed.
+- `positions`: the `bannerTypePosition` step 6 showed, and `bannerFabPosition` only when step 4
+  proposed one.
 
 Send nothing else: no `logo` and no `texts`. This skill changes colours and position only.
 
