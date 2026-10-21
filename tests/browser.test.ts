@@ -118,6 +118,38 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
        <div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`,
     ),
   }),
+  // A "Learn more" button inside the banner text: the climb goes past it to the box with the real buttons.
+  '/keyword-learn-more': () => ({
+    body: banner(
+      'keyword-learn-more',
+      `<div><p>We use cookies. <button type="button">Learn more</button></p>${TEXT_BUTTONS}</div>`,
+    ),
+  }),
+  // The keyword split across elements, so no one text node holds the whole phrase.
+  '/keyword-split': () => ({
+    body: banner('keyword-split', `<div><p>We use <b>cookies</b> here.</p>${TEXT_BUTTONS}</div>`),
+  }),
+  // No banner: the keyword is in a long page's hero, and an unrelated "Reject all" is further down.
+  '/keyword-hero': () => ({
+    body: banner(
+      'keyword-hero',
+      `<main>
+         <section><h1>Fresh bread</h1><p>We use cookies to remember your basket.</p></section>
+         <div style="height:3000px"></div>
+         <form><p>Pending invitations</p><button type="button" onclick="reject()">Reject all</button></form>
+       </main>`,
+    ),
+  }),
+  // A fixed bar holding the keyword and only a "Learn more": the climb stops at the bar, not at the "Reject all" past it.
+  '/keyword-fixed': () => ({
+    body: banner(
+      'keyword-fixed',
+      `<div>
+         <div style="position:fixed;bottom:0"><p>We use cookies.</p><button type="button">Learn more</button></div>
+         <button type="button" onclick="reject()">Reject all</button>
+       </div>`,
+    ),
+  }),
   // Reject clears one cookie but keeps tracking anyway: the finding the check exists for.
   '/leaky-reject': () => ({
     body: banner(
@@ -740,6 +772,42 @@ describe('the consent action', () => {
     assert.equal(reject?.pressed, true);
     assert.equal(reject?.matchedBy, 'text');
     assert.deepEqual(reject?.cookiesAfterClick, []);
+  });
+
+  // Only the banner text as a keyword, so the "Accept all" label cannot locate the banner by itself.
+  const BANNER_TEXT_ONLY = { ...MATCHERS, banner: { ...MATCHERS.banner, keywords: ['we use cookies'] } };
+
+  test('a "Learn more" button inside the banner text does not stop the search for the real buttons', async () => {
+    const { output } = await withConsent('/keyword-learn-more', BANNER_TEXT_ONLY);
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, true);
+    assert.equal(consent?.reject.pressed, true);
+  });
+
+  test('a keyword split across elements still locates the banner', async () => {
+    const { output } = await withConsent('/keyword-split', BANNER_TEXT_ONLY);
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, true);
+    assert.equal(consent?.reject.pressed, true);
+  });
+
+  test('keyword text in a hero does not reach an unrelated button further down the page', async () => {
+    const { output } = await withConsent('/keyword-hero');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.bannerFound, true);
+    assert.equal(consent?.reject.pressed, false);
+    assert.equal(consent?.reject.reason, 'no-button');
+  });
+
+  test('the search from a keyword stops at a fixed box', async () => {
+    const { output } = await withConsent('/keyword-fixed');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.reject.pressed, false);
+    assert.equal(consent?.reject.reason, 'no-button');
   });
 
   test('AC3: tracking that keeps going after reject is reported as set after the reject', async () => {
