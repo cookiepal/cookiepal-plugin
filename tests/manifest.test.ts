@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, test } from 'node:test';
 
@@ -178,8 +178,8 @@ describe('repository contents', () => {
 
   // The public suffix list that tldts bundles names thousands of other companies'
   // hosts, `amazonaws.com` and `*-staging` among them. It is public data, not
-  // ours, so its section of the bundle is the one part left out of this check.
-  const PUBLIC_SUFFIX_LIST = /\/\/ node_modules\/\.pnpm\/tldts@[^\n]*\n[\s\S]*?(?=\n\/\/ (?:node_modules|src)\/)/g;
+  // ours, so its section of dist/tldts.mjs is the one part left out of this check.
+  const PUBLIC_SUFFIX_LIST = /\/\/ node_modules\/\.pnpm\/tldts@[^\n]*\n[\s\S]*?(?=\n\/\/ (?:node_modules|src)\/|$)/g;
 
   test('no internal hostnames or AWS endpoints', () => {
     for (const { path, text } of files) {
@@ -190,6 +190,24 @@ describe('repository contents', () => {
       for (const pattern of FORBIDDEN) {
         assert.doesNotMatch(withoutSuffixList, pattern, `${path} matches ${pattern}`);
       }
+    }
+  });
+
+  // The plugin directory holds a submission for a reviewer when a file is over 256 KiB.
+  test('every dist/ file is under 240 KiB', () => {
+    for (const name of readdirSync(join(root, 'dist'))) {
+      const { size } = statSync(join(root, 'dist', name));
+      assert.ok(size <= 240 * 1024, `dist/${name} is ${size} bytes; move data or a dependency out of the bundle`);
+    }
+  });
+
+  // It holds any file that is not text too, and esbuild writes some escapes, such as `\u0001`, as the raw byte.
+  test('every dist/ file is text', () => {
+    for (const name of readdirSync(join(root, 'dist'))) {
+      const text = readFileSync(join(root, 'dist', name), 'utf8');
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what this looks for.
+      const control = text.match(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/);
+      assert.equal(control, null, `dist/${name} has a raw control character; escape it differently in src/`);
     }
   });
 });
