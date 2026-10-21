@@ -133,9 +133,9 @@ const output = (mode: string | undefined): Output => {
 
 export const STILL_STORED =
   'The install ID is no longer sent, but this machine keeps it because its stored checks have not been ' +
-  "erased twice. Run the cookiepal server's forget_install with it until two runs have reported nothing " +
-  'remaining: the second catches a check the first could not see yet. To delete it anyway, leaving those ' +
-  'checks to expire on their own, run "consent decline --anyway".';
+  "erased twice. Run the cookiepal server's forget_install with it until two runs, at least a few seconds " +
+  'apart, have reported nothing remaining: the second catches a check the first could not see yet. To delete ' +
+  'it from this machine anyway, which leaves those checks to expire with nothing able to find them, run "consent decline --anyway".';
 
 const consent = (answer: string | undefined, flag: string | undefined): Output => {
   if (!dataDir) return NO_DATA_DIR;
@@ -387,7 +387,7 @@ export const saveForgotten = (dir: string, payload: unknown): boolean => {
   // array carries no `isError` at all, so trusting its absence reads every
   // such failure as a success.
   const body = resultFrom(response);
-  if (!body || body.isError === true || body.remaining !== 0) return false;
+  if (!body || body.isError === true || !Number.isInteger(body.deleted) || body.remaining !== 0) return false;
 
   return markForgotten(dir, input.installId);
 };
@@ -403,8 +403,12 @@ const GUARD_REASON =
   "plan_check takes only a page as the check's prepare step returns it: origin and path, with no query string, " +
   'fragment or credentials. Run prepare and send its `page`; the rest stays on this machine.';
 
-const deny = () => {
-  const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: GUARD_REASON };
+const GUARD_ID_REASON =
+  'plan_check may carry an installId only while the user is sharing it, and only the one prepare returned. ' +
+  "Sharing has stopped or the ID is not this machine's, so leave installId out.";
+
+const deny = (reason = GUARD_REASON) => {
+  const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason };
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: decision })}\n`);
 };
 
@@ -413,6 +417,13 @@ const deny = () => {
  * returns it, so a query string, fragment or credentials cannot reach CookiePal
  * even if the skill's steps are skipped. Input too large to read is refused
  * too; input that is not JSON is left to Claude Code, which never sends it.
+ *
+ * It holds the install ID to the same standard: one is let through only while
+ * the user is sharing it and it is the ID stored here. After stop-sharing, the
+ * ID may still be in the conversation, from a refused decline or `consent
+ * status`, so only this keeps it from being sent again. An ID let through is
+ * about to store a new check, which retires any erasure marker for it now,
+ * at the moment it is sent, not when a check was merely prepared.
  */
 const guard = async () => {
   let raw: string;
@@ -422,15 +433,28 @@ const guard = async () => {
     deny();
     return;
   }
-  let url: unknown;
+  let input: Record<string, unknown>;
   try {
-    url = JSON.parse(raw)?.tool_input?.url;
+    const parsed = JSON.parse(raw)?.tool_input;
+    if (!isRecord(parsed)) return;
+    input = parsed;
   } catch {
     return;
   }
+  const { url, installId } = input;
   if (typeof url !== 'string') return;
   const prepared = prepareUrl(url);
-  if (!prepared.ok || prepared.page !== url) deny();
+  if (!prepared.ok || prepared.page !== url) {
+    deny();
+    return;
+  }
+  if (installId === undefined || installId === null) return;
+  const consent = dataDir ? readConsent(dataDir) : null;
+  if (typeof installId !== 'string' || !dataDir || !consent?.sharing || consent.installId !== installId) {
+    deny(GUARD_ID_REASON);
+    return;
+  }
+  clearForgotten(dataDir, installId);
 };
 
 const print = (output: Output) => {
