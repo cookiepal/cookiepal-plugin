@@ -37,10 +37,10 @@ const DEFAULTS = {
  * place them. The title and description sit on the background and, in the
  * preference centre and opt-out confirmation, on a lighter panel. The buttons
  * come in two styles: outlined, the accent on the background, and filled,
- * white on the accent. Which button gets which turns
- * on the domain's button theme, which this cannot see and `customise_banner`
- * cannot change, but the customise button is always outlined and the accept
- * button is filled under the default theme, so both are checked every time.
+ * white on the accent. Which button gets which turns on the domain's button
+ * theme, which this cannot see and `customise_banner` cannot change, but the
+ * customise button is always outlined and the accept button is filled under
+ * the default theme, so both are checked every time.
  */
 const PAIRS: { name: string; foreground: Slot | 'buttonText'; background: Slot | 'panel' }[] = [
   { name: 'title', foreground: 'main', background: 'background' },
@@ -50,19 +50,6 @@ const PAIRS: { name: string; foreground: Slot | 'buttonText'; background: Slot |
   { name: 'outlined buttons', foreground: 'accent', background: 'background' },
   { name: 'filled buttons', foreground: 'buttonText', background: 'accent' },
 ];
-
-/** How much lighter the panels are than the background, per channel: the server's `adjustBrightness(background, 10)`. */
-const PANEL_LIFT = Math.round(2.55 * 10);
-
-/**
- * The background of the preference centre's cookie rows and the opt-out
- * confirmation, which the server derives from the banner background when it
- * saves the palette, so the title and description have to read on it too. Only
- * text is drawn there; the accent appears as an icon and a border, which are
- * not text and are not held to 4.5:1.
- */
-export const panelBackground = (background: string): string =>
-  toHex(fromHex(background).map((channel) => Math.min(255, Math.round(channel * 255) + PANEL_LIFT) / 255) as Rgb);
 
 type Rgb = [number, number, number];
 
@@ -200,6 +187,19 @@ const luminance = (hex: string) => {
   const [r, g, b] = fromHex(hex).map(decode);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
+
+/** How much lighter the panels are than the background, per channel: the server's `adjustBrightness(background, 10)`. */
+const PANEL_LIFT = Math.round(2.55 * 10);
+
+/**
+ * The background of the preference centre's cookie rows and the opt-out
+ * confirmation, which the server derives from the banner background when it
+ * saves the palette, so the title and description have to read on it too. Only
+ * text is drawn there; the accent appears as an icon and a border, which are
+ * not text and are not held to 4.5:1.
+ */
+export const panelBackground = (background: string): string =>
+  toHex(fromHex(background).map((channel) => Math.min(255, Math.round(channel * 255) + PANEL_LIFT) / 255) as Rgb);
 
 /** The WCAG 2 contrast ratio, from 1 to 21. */
 export const contrast = (one: string, other: string) => {
