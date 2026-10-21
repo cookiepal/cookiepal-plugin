@@ -344,14 +344,20 @@ const titleFor = (page: string): string => {
   }
 };
 
-/** Everything that belongs in a document head: the title, the typefaces and the styles. */
-const headOf = (assessment: Assessment): string =>
-  `<title>${esc(titleFor(assessment.page))}</title>` +
+const FONTS =
   '<link rel="preconnect" href="https://fonts.googleapis.com">' +
   '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
   '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1' +
-  '&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700&display=swap">' +
-  `<style>${STYLE}</style>`;
+  '&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700&display=swap">';
+
+/**
+ * Everything that belongs in a document head: the title, the typefaces and the
+ * styles. The typefaces are only for the published page: a local file that
+ * fetched them would tell Google who opened it, and the local forms are the ones
+ * that send nothing anywhere. Every face has a system fallback in `STYLE`.
+ */
+const headOf = (assessment: Assessment, { fonts }: { fonts: boolean }): string =>
+  `<title>${esc(titleFor(assessment.page))}</title>${fonts ? FONTS : ''}<style>${STYLE}</style>`;
 
 /** Everything that belongs in a document body. */
 const bodyOf = (assessment: Assessment): string => {
@@ -391,21 +397,22 @@ const bodyOf = (assessment: Assessment): string => {
  * The page as the artifact publisher wants it: a fragment, with no doctype,
  * html, head or body tags of its own, which it wraps in its own shell.
  */
-export const renderReport = (assessment: Assessment): string => headOf(assessment) + bodyOf(assessment);
+export const renderReport = (assessment: Assessment): string =>
+  headOf(assessment, { fonts: true }) + bodyOf(assessment);
 
 /**
  * The same page as a file someone can open in a browser.
  *
  * A file on disk has no publisher to wrap it, so this adds the equivalent
  * shell: the doctype that keeps the browser out of quirks mode, the charset and
- * viewport metas, and the few base rules the publisher applies. The head and
- * body content are the same, so the file looks like the published page rather
- * than merely holding the same words.
+ * viewport metas, and the few base rules the publisher applies. The body is
+ * the same, so the file looks like the published page rather than merely
+ * holding the same words; only the web fonts are left out, for system ones.
  */
 export const renderDocument = (assessment: Assessment): string =>
   '<!doctype html>\n<html lang="en">\n<head>\n' +
   '<meta charset="utf-8">\n' +
   '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
-  `${headOf(assessment)}\n` +
+  `${headOf(assessment, { fonts: false })}\n` +
   '<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>\n' +
   `</head>\n<body>\n${bodyOf(assessment)}\n</body>\n</html>\n`;
