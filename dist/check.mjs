@@ -9771,30 +9771,30 @@ var save = (dataDir2, state) => {
   return state;
 };
 var share = (dataDir2) => save(dataDir2, { asked: true, installId: readConsent(dataDir2).installId ?? randomUUID(), sharing: true });
-var ERASURES_NEEDED = 2;
+var ERASURE_GAP_MS = 5e3;
 var readForgotten = (dataDir2) => {
   try {
     const saved = JSON.parse(readFileSync(join2(dataDir2, FORGOTTEN), "utf8"));
-    if (Array.isArray(saved)) {
-      return Object.fromEntries(saved.filter((id) => typeof id === "string").map((id) => [id, 1]));
-    }
-    if (!saved || typeof saved !== "object") return {};
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
     return Object.fromEntries(
-      Object.entries(saved).filter((entry) => Number.isInteger(entry[1]))
+      Object.entries(saved).filter(
+        (entry) => Array.isArray(entry[1]) && entry[1].every((time) => Number.isFinite(time))
+      )
     );
   } catch {
     return {};
   }
 };
+var erasedTwice = (times = []) => times.length >= 2 && Math.max(...times) - Math.min(...times) >= ERASURE_GAP_MS;
 var writeForgotten = (dataDir2, forgotten) => {
   mkdirSync(dataDir2, { recursive: true });
   writeFileSync(join2(dataDir2, FORGOTTEN), `${JSON.stringify(forgotten)}
 `, { mode: 384 });
 };
-var markForgotten = (dataDir2, installId) => {
+var markForgotten = (dataDir2, installId, now = Date.now()) => {
   if (!INSTALL_ID.test(installId)) return false;
   const forgotten = readForgotten(dataDir2);
-  forgotten[installId] = (forgotten[installId] ?? 0) + 1;
+  forgotten[installId] = [...forgotten[installId] ?? [], now];
   writeForgotten(dataDir2, forgotten);
   return true;
 };
@@ -9807,7 +9807,7 @@ var clearForgotten = (dataDir2, installId) => {
 };
 var decline = (dataDir2, { force = false } = {}) => {
   const { installId } = readConsent(dataDir2);
-  if (installId && !force && (readForgotten(dataDir2)[installId] ?? 0) < ERASURES_NEEDED) {
+  if (installId && !force && !erasedTwice(readForgotten(dataDir2)[installId])) {
     save(dataDir2, { asked: true, installId, sharing: false });
     return null;
   }
@@ -10638,7 +10638,7 @@ var output = (mode) => {
   if (!saved) return { ok: false, error: `Use "output" with one of: ${OUTPUT_MODES.join(", ")}.` };
   return { ok: true, output: saved.mode, asked: saved.asked };
 };
-var STILL_STORED = `The install ID is no longer sent, but this machine keeps it because its stored checks have not been erased twice. Run the cookiepal server's forget_install with it until two runs have reported nothing remaining: the second catches a check the first could not see yet. To delete it anyway, leaving those checks to expire on their own, run "consent decline --anyway".`;
+var STILL_STORED = `The install ID is no longer sent, but this machine keeps it because its stored checks have not been erased twice. Run the cookiepal server's forget_install with it until two runs, at least a few seconds apart, have reported nothing remaining: the second catches a check the first could not see yet. To delete it from this machine anyway, which leaves those checks to expire with nothing able to find them, run "consent decline --anyway".`;
 var consent = (answer, flag) => {
   if (!dataDir) return NO_DATA_DIR;
   if (answer !== "share" && answer !== "decline" && answer !== "status") {
@@ -10824,7 +10824,7 @@ var saveForgotten = (dir, payload) => {
   if (!isRecord4(input) || typeof input.installId !== "string") return false;
   if (isRecord4(response) && response.isError === true) return false;
   const body = resultFrom(response);
-  if (!body || body.isError === true || body.remaining !== 0) return false;
+  if (!body || body.isError === true || !Number.isInteger(body.deleted) || body.remaining !== 0) return false;
   return markForgotten(dir, input.installId);
 };
 var hook = async (store) => {
@@ -10834,8 +10834,9 @@ var hook = async (store) => {
   }
 };
 var GUARD_REASON = "plan_check takes only a page as the check's prepare step returns it: origin and path, with no query string, fragment or credentials. Run prepare and send its `page`; the rest stays on this machine.";
-var deny = () => {
-  const decision = { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: GUARD_REASON };
+var GUARD_ID_REASON = "plan_check may carry an installId only while the user is sharing it, and only the one prepare returned. Sharing has stopped or the ID is not this machine's, so leave installId out.";
+var deny = (reason = GUARD_REASON) => {
+  const decision = { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason };
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: decision })}
 `);
 };
@@ -10847,15 +10848,28 @@ var guard = async () => {
     deny();
     return;
   }
-  let url;
+  let input;
   try {
-    url = JSON.parse(raw)?.tool_input?.url;
+    const parsed = JSON.parse(raw)?.tool_input;
+    if (!isRecord4(parsed)) return;
+    input = parsed;
   } catch {
     return;
   }
+  const { url, installId } = input;
   if (typeof url !== "string") return;
   const prepared = prepareUrl(url);
-  if (!prepared.ok || prepared.page !== url) deny();
+  if (!prepared.ok || prepared.page !== url) {
+    deny();
+    return;
+  }
+  if (installId === void 0 || installId === null) return;
+  const consent2 = dataDir ? readConsent(dataDir) : null;
+  if (typeof installId !== "string" || !dataDir || !consent2?.sharing || consent2.installId !== installId) {
+    deny(GUARD_ID_REASON);
+    return;
+  }
+  clearForgotten(dataDir, installId);
 };
 var print = (output2) => {
   process.stdout.write(`${JSON.stringify(output2, null, 2)}
