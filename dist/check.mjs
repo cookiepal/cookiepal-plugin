@@ -9961,7 +9961,7 @@ var pageText = (raw) => {
 // src/plan.ts
 var PLAN_VERSION = 1;
 var RESULT_VERSION = 2;
-var UPDATE_HINT = "Update the plugin with /plugin marketplace update cookiepal, then restart Claude Code.";
+var UPDATE_HINT = "Update the plugin by running `claude plugin marketplace update cookiepal` and then `claude plugin update cookiepal@cookiepal` in a terminal, then run /reload-plugins in Claude Code.";
 var MAX_SETTLE_MS = 1e4;
 var MAX_TIMEOUT_MS = 6e4;
 var MAX_AFTER_CLICK_SETTLE_MS = 1e4;
@@ -10226,7 +10226,8 @@ var titleFor = (page) => {
     return "Cookie check";
   }
 };
-var headOf = (assessment) => `<title>${esc(titleFor(assessment.page))}</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700&display=swap"><style>${STYLE}</style>`;
+var FONTS = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700&display=swap">';
+var headOf = (assessment, { fonts }) => `<title>${esc(titleFor(assessment.page))}</title>${fonts ? FONTS : ""}<style>${STYLE}</style>`;
 var bodyOf = (assessment) => {
   const when = assessment.checkedAt ? assessment.checkedAt.slice(0, 10) : null;
   const findings = ordered(assessment.findings);
@@ -10239,13 +10240,13 @@ var bodyOf = (assessment) => {
   ].join("");
   return `<main class="page"><header class="head"><div class="masthead">${MARK}<span class="wordmark">CookiePal</span></div><h1>What this page did before anyone agreed</h1><p class="target">${esc(assessment.page)}</p><div class="facts">${facts}</div></header>` + (assessment.clean ? "" : grid(findings)) + `<section class="section">${assessment.clean ? cleanBlock(assessment) : findings.map(findingBlock2).join("")}</section>` + notes(assessment) + inventory(assessment) + `<footer><p><strong>Scope.</strong> ${esc(assessment.scope)}</p><p><strong>Not a verdict.</strong> ${esc(assessment.noVerdict)}</p><p>Checked on this machine with the CookiePal plugin for Claude Code. The page was loaded in a temporary browser profile; no cookie values were read.</p></footer></main>`;
 };
-var renderReport = (assessment) => headOf(assessment) + bodyOf(assessment);
+var renderReport = (assessment) => headOf(assessment, { fonts: true }) + bodyOf(assessment);
 var renderDocument = (assessment) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-${headOf(assessment)}
+${headOf(assessment, { fonts: false })}
 <style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
 <body>
