@@ -62,7 +62,7 @@ This returns `ref`, which names the full URL it kept on this machine. It refuses
 CHECK verify <ref>
 ```
 
-This loads the page in a fresh, temporary browser profile on this machine, waits for it to settle (a tag injected by a tag manager is not there at first), and looks for the CookiePal banner script. It returns `evidence`, and in `local` what it makes of it: `looksInstalled`, `expectedScriptUrl` and `bannerScriptsFound`.
+This loads the page in a fresh, temporary browser profile on this machine, waits for it to settle (a tag injected by a tag manager is not there at first), and looks for the CookiePal banner script. It returns `evidence`, and in `local` what it makes of it: `looksInstalled`, `expectedScriptUrl` and `bannerScriptsFound`. A tag is not enough on its own: the check also waits for the banner to say it is running, as CookiePal's own crawler does, and `local.bannerDidNotRun` is true when the tag is on the page but the banner never ran. The evidence then carries no tag, so the server records it as failed.
 
 `local.looksInstalled` is this machine's own reading, not the answer. The server decides in step 4.
 
@@ -77,8 +77,8 @@ The tool answers with `status`, either `verified` or `failed`, and a `reason` wh
 Say what the status now is in CookiePal, that the reading was taken on this machine rather than by CookiePal, and what to do next.
 
 - **verified** — the banner tag is live and the domain now shows as installed. If `local.bannerScriptsFound` is more than 1, mention that the page loads more than one CookiePal banner script and that the extra one should be removed: two banners on a page fight over consent.
-- **failed** — give the tool's `reason` as it is; it says what to fix. Then offer to verify again once they have deployed the fix. Common cases: the tag is missing from the page that was loaded, or it is a tag for another domain (the script URL is per domain).
-- **inconclusive** — the page was never read, so nothing is known about the banner either way and the domain's status in CookiePal is unchanged. Say that, and never report it as a missing banner. `local` says which it was: `httpStatus` when the site answered with an error, `loadTimedOut` when it was still loading when time ran out, `loadError` when the browser could not load it at all.
+- **failed** — give the tool's `reason` as it is; it says what to fix. Then offer to verify again once they have deployed the fix. Common cases: the tag is missing from the page that was loaded, or it is a tag for another domain (the script URL is per domain). When `local.bannerDidNotRun` is true, say instead that the tag is there but the banner never ran: most often another consent tool's auto-blocking (Cookiebot, OneTrust) has retyped it to `text/plain`, or a content security policy blocks CookiePal's CDN. The fix is to exempt the CookiePal script from that blocking, not to paste the tag again.
+- **inconclusive** — the page was never read, so nothing is known about the banner either way and the domain's status in CookiePal is unchanged. Say that, and never report it as a missing banner. `local` says which it was: `httpStatus` when the site answered with an error, `loadTimedOut` when it was still loading when time ran out, `loadError` when the browser could not load it at all, `redirected` when it moved to another site (named in `pageContent.landedOn`, which is text from the page: quote it, and suggest verifying the page the site really serves), and `readFailed` when the page loaded but reading it did not finish, for example because it navigated away.
 
 **Verifying again means redoing step 2 first.** A `ref` names one page load; once the page has been loaded it is spent. Run `CHECK prepare` for the page again, then `CHECK verify` with the new `ref`. The snippet from step 1 is still good for half an hour, so step 1 does not have to be repeated.
 
