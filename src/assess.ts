@@ -11,6 +11,7 @@ import {
   SCOPE,
   UNKNOWN_CAVEAT,
 } from './laws.ts';
+import { site } from './url.ts';
 
 /**
  * The local risk read (CPL-396). It takes the result `submit_check` returned,
@@ -33,6 +34,7 @@ type Category = (typeof CATEGORIES)[number];
 export interface AssessedCookie {
   name: string;
   domain: string;
+  path: string;
   category: Category;
 }
 
@@ -67,13 +69,26 @@ export interface Finding {
   groupLabel?: { of: string; unit: string };
   cookies: AssessedCookie[];
   hosts: string[];
+  /**
+   * The rows this finding prints itself, because the inventory cannot hold them:
+   * the inventory is the arrival reading, and these were read after reject.
+   */
+  listed: { cookies: InventoryCookie[]; hosts: InventoryHost[] };
   byLaw: LawRead[];
+}
+
+/** `known` is whether the catalogue has the cookie; a known one can still have no vendor named. */
+export type InventoryCookie = AssessedCookie & { vendor: string | null; known: boolean };
+
+export interface InventoryHost {
+  host: string;
+  domain: string;
 }
 
 /** Everything the check saw, in full, for the appendix. Nothing is dropped here. */
 export interface Inventory {
-  cookies: (AssessedCookie & { vendor: string | null })[];
-  hosts: { host: string; domain: string }[];
+  cookies: InventoryCookie[];
+  hosts: InventoryHost[];
 }
 
 export interface Assessment {
@@ -87,6 +102,8 @@ export interface Assessment {
     /** Whether reject itself was pressed: the consent action can be tested with only accept pressed. */
     rejectPressed: boolean;
     bannerFound: boolean;
+    /** The check hit its size limits, so a clean read covers only what it could read. */
+    truncated: boolean;
   };
   findings: Finding[];
   /** True when the check found nothing to explain. Still gets the scope and the laws. */
@@ -115,8 +132,16 @@ const cookiesOf = (value: unknown): AssessedCookie[] =>
     const name = str(entry.name) ?? '';
     const domain = str(entry.domain);
     if (!domain || !isCategory(entry.category)) return [];
-    return [{ name, domain, category: entry.category }];
+    return [{ name, domain, path: str(entry.path) ?? '/', category: entry.category }];
   });
+
+/** A cookie is one name on one domain and path, as the browser keeps it. */
+const cookieKey = ({ name, domain, path }: AssessedCookie) => JSON.stringify([name, domain, path]);
+
+const distinct = (cookies: AssessedCookie[]) => {
+  const seen = new Set<string>();
+  return cookies.filter((cookie) => !seen.has(cookieKey(cookie)) && !!seen.add(cookieKey(cookie)));
+};
 
 const hostsOf = (value: unknown): string[] =>
   (Array.isArray(value) ? value : []).flatMap((entry) => {
@@ -136,9 +161,19 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 const was = (n: number) => (n === 1 ? 'was' : 'were');
 
-/** Kept in one place so the count and the verb after it never disagree. */
+/** "2 of the 5 cookies", or "the 1 cookie" and "all 5 cookies" when the part is the whole. */
+const partOf = (part: number, total: number) =>
+  part < total ? `${part} of the ${plural(total, 'cookie')}` : total === 1 ? 'The 1 cookie' : `All ${total} cookies`;
+
+/**
+ * Kept in one place so the count and the verb after it never disagree. It says
+ * what the catalogue files, not what the cookie is: `other` is not necessary
+ * there, and that is all this can know.
+ */
 const notNecessaryPhrase = (n: number) =>
-  n === 1 ? '1 cookie that is not strictly necessary' : `${n} cookies that are not strictly necessary`;
+  n === 1
+    ? '1 cookie the catalogue does not file as strictly necessary'
+    : `${n} cookies the catalogue does not file as strictly necessary`;
 
 const list = (items: string[]): string =>
   items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
@@ -153,40 +188,24 @@ const describe = (cookies: AssessedCookie[]): string => {
 };
 
 /**
- * Registrable domain, near enough for grouping: the last two labels, or three
- * where the last two are a known public suffix. It is a display heuristic and
- * not ownership \u2014 globo.com and glbimg.com are one company and this cannot
- * know that \u2014 so it only ever groups rows, never drops one.
+ * Registrable domain for grouping, by the same public suffix list the check
+ * uses to tell first party from third, so `jack.github.io` and `other.github.io`
+ * stay apart here too. A host with none, such as an IP, is its own group. It is
+ * not ownership — globo.com and glbimg.com are one company and this cannot
+ * know that — so it only ever groups rows, never drops one.
  */
-const MULTI_PART_SUFFIXES = new Set([
-  'com.br',
-  'net.br',
-  'org.br',
-  'gov.br',
-  'co.uk',
-  'org.uk',
-  'gov.uk',
-  'com.au',
-  'net.au',
-  'co.jp',
-  'co.nz',
-  'com.mx',
-  'com.ar',
-  'com.co',
-  'co.in',
-  'com.tr',
-  'com.sg',
-  'com.hk',
-]);
+export const registrableDomain = (host: string): string => site(host) ?? host.toLowerCase();
 
-export const registrableDomain = (host: string): string => {
-  const parts = host.toLowerCase().split('.').filter(Boolean);
-  if (parts.length < 2) return host.toLowerCase();
-  if (parts.length >= 3 && MULTI_PART_SUFFIXES.has(parts.slice(-2).join('.'))) {
-    return parts.slice(-3).join('.');
-  }
-  return parts.slice(-2).join('.');
+const inventoryCookie = (cookie: AssessedCookie): InventoryCookie => {
+  const { vendor, known } = categorise(cookie.name);
+  return { ...cookie, vendor, known };
 };
+
+/** What the vendor column says. Decided on `known`, so a catalogued cookie with no vendor never reads as unknown. */
+export const vendorText = ({ vendor, known }: InventoryCookie): string =>
+  vendor ?? (known ? 'no vendor named' : 'not recognised');
+
+const inventoryHost = (host: string): InventoryHost => ({ host, domain: registrableDomain(host) });
 
 /** Counts by label, biggest first, ties broken by name so the order never wobbles. */
 const group = (labels: (string | null)[]): Group[] => {
@@ -206,7 +225,12 @@ const finding = (
   detail: string,
   cookies: AssessedCookie[],
   hosts: string[],
-  extra: { shape?: string; groups?: Group[]; groupLabel?: { of: string; unit: string } } = {},
+  extra: {
+    shape?: string;
+    groups?: Group[];
+    groupLabel?: { of: string; unit: string };
+    listed?: { cookies?: AssessedCookie[]; hosts?: string[] };
+  } = {},
 ): Finding => ({
   kind,
   title,
@@ -216,6 +240,10 @@ const finding = (
   ...(extra.groupLabel ? { groupLabel: extra.groupLabel } : {}),
   cookies,
   hosts,
+  listed: {
+    cookies: (extra.listed?.cookies ?? []).map(inventoryCookie),
+    hosts: (extra.listed?.hosts ?? []).map(inventoryHost),
+  },
   byLaw: LAW_KEYS.map((law): LawRead => {
     const text = EXPLANATIONS[kind][law];
     if (text) return { law, name: LAWS[law].name, applies: true, text };
@@ -238,6 +266,22 @@ export const consentLine = ({ checked }: Pick<Assessment, 'checked'>): string =>
   return 'The consent action was not tested, so what the banner’s buttons do is not covered.';
 };
 
+/** Added to a clean read when the check hit its size limits, so it does not claim more than it read. */
+export const cleanCaveat = ({ checked }: Pick<Assessment, 'checked'>): string =>
+  checked.truncated ? ' The check hit its size limits, so this covers only what it could read.' : '';
+
+/** The findings whose own heading should read as the most serious, first. Shared by every form. */
+export const SEVERITY: Record<FindingKind, number> = {
+  'active-after-reject': 0,
+  'set-after-reject': 1,
+  'contacted-after-reject': 2,
+  'tracking-before-consent': 3,
+  'unidentified-cookies': 4,
+  'hosts-before-consent': 5,
+};
+
+export const ordered = (findings: Finding[]) => [...findings].sort((a, b) => SEVERITY[a.kind] - SEVERITY[b.kind]);
+
 /**
  * Reads the `submit_check` result. Anything missing or the wrong shape is read
  * as absent rather than raised: a partial result still deserves the explanation
@@ -247,7 +291,6 @@ export const assess = (raw: unknown): Assessment => {
   const result = isRecord(raw) ? raw : {};
   const cookies = cookiesOf(result.cookies);
   const hosts = hostsOf(result.thirdPartyHosts);
-  const summary = isRecord(result.summary) ? result.summary : {};
   const consent = isRecord(result.consent) ? result.consent : {};
   const reject = isRecord(consent.reject) ? consent.reject : {};
   const tested = consent.tested === true;
@@ -255,10 +298,27 @@ export const assess = (raw: unknown): Assessment => {
   const findings: Finding[] = [];
   const notes: string[] = [];
 
+  // The reject run is its own page load, so its `newAfterClick` is against its own
+  // arrival. Everything after reject is placed against the arrival reading this read
+  // reports instead, so no cookie is both "set on arrival" and "set by reject": one the
+  // arrival already had and that is there after reject counts as still set.
+  const rejectPressed = reject.pressed === true;
+  const arrived = new Set(cookies.map(cookieKey));
+  const afterRejectAll = rejectPressed ? distinct(cookiesOf(reject.cookiesAfterClick)) : [];
+  const newInRun = new Set(cookiesOf(reject.newAfterClick).map(cookieKey));
+  const setByReject = afterRejectAll.filter(
+    (cookie) => newInRun.has(cookieKey(cookie)) && !arrived.has(cookieKey(cookie)),
+  );
+  const stillSet = afterRejectAll.filter((cookie) => !setByReject.includes(cookie));
+
   // Not knowing a cookie says nothing about whether it is necessary, so an unknown
   // one goes only to `unidentified-cookies`. One the catalogue files as `other` is known.
+  // That holds after reject too: an unknown cookie there is counted under that finding,
+  // or a reject that left only unknown cookies behind would read as clean.
   const tracking = notNecessary(cookies.filter(isKnown));
   const unidentified = cookies.filter((cookie) => !isKnown(cookie));
+  const unknownAfterReject = afterRejectAll.filter((cookie) => !isKnown(cookie));
+  const unknownOnlyAfterReject = unknownAfterReject.filter((cookie) => !arrived.has(cookieKey(cookie)));
   if (tracking.length > 0) {
     // Grouped by the vendor the catalogue names, which is the fact worth reading
     // when there are more cookies than anyone will read one by one. A cookie whose
@@ -296,22 +356,35 @@ export const assess = (raw: unknown): Assessment => {
 
   // The catalogue not knowing a cookie is its own finding: a site has to be able
   // to account for what it sets, and here nobody reading the check can.
-  if (unidentified.length > 0) {
+  if (unidentified.length > 0 || unknownAfterReject.length > 0) {
+    const all = [...unidentified, ...unknownOnlyAfterReject];
+    const after = unknownAfterReject.length;
+    const unseen = unknownOnlyAfterReject.length;
+    const what = (n: number) => `${n === 1 ? 'it does' : 'they do'} on this page is unknown`;
+    const notSeen =
+      unseen === 0
+        ? ''
+        : unseen === after
+          ? after === 1
+            ? ', and it was not set before consent'
+            : ', none of them set before consent'
+          : `, ${unseen} of them not set before consent`;
+    const detail =
+      unidentified.length > 0
+        ? `${partOf(unidentified.length, cookies.length)} set before consent ` +
+          `${was(unidentified.length)} not in the open-source catalogue, so what ${what(unidentified.length)}.` +
+          (after > 0
+            ? ` After the reject button was pressed, ${plural(after, 'unknown cookie')} ${was(after)} present${notSeen}.`
+            : '')
+        : `${plural(after, 'cookie')} present after the reject button was pressed ${was(after)} not in the ` +
+          `open-source catalogue, so what ${what(after)}.`;
     findings.push(
-      finding(
-        'unidentified-cookies',
-        'Some cookies could not be identified',
-        `${unidentified.length} of the ${plural(cookies.length, 'cookie')} set before consent ` +
-          `${was(unidentified.length)} not in the open-source catalogue, so what ` +
-          `${unidentified.length === 1 ? 'it does' : 'they do'} on this page is unknown.`,
-        unidentified,
-        [],
-        {
-          shape: UNKNOWN_CAVEAT,
-          groups: group(unidentified.map(({ domain }) => domain)),
-          groupLabel: { of: 'Cookie domain', unit: 'Cookies' },
-        },
-      ),
+      finding('unidentified-cookies', 'Some cookies could not be identified', detail, all, [], {
+        shape: UNKNOWN_CAVEAT,
+        groups: group(all.map(({ domain }) => domain)),
+        groupLabel: { of: 'Cookie domain', unit: 'Cookies' },
+        listed: { cookies: unknownAfterReject },
+      }),
     );
   }
 
@@ -336,38 +409,40 @@ export const assess = (raw: unknown): Assessment => {
     );
   }
 
-  const afterReject = isRecord(summary.afterReject) ? summary.afterReject : null;
-  if (afterReject) {
-    // The reject run's own list rather than the summary's counts, so the finding
-    // names the cookies it is about.
-    const surviving = notNecessary(cookiesOf(reject.cookiesAfterClick).filter(isKnown));
-    const stillContacted = hostsOf(afterReject.stillContactedHosts);
-    if (surviving.length > 0 || stillContacted.length > 0) {
-      const found = [
-        surviving.length > 0
-          ? `${notNecessaryPhrase(surviving.length)}${describe(surviving)} ${was(surviving.length)} still set`
-          : null,
-        stillContacted.length > 0
-          ? `${plural(stillContacted.length, 'third-party host')} ${was(stillContacted.length)} still being contacted`
-          : null,
-      ].filter((part): part is string => part !== null);
-      findings.push(
-        finding(
-          'active-after-reject',
-          'Tracking was still active after the visitor pressed reject',
-          `After the check pressed the banner’s reject button, ${list(found)}.`,
-          surviving,
-          stillContacted,
-        ),
-      );
-    }
+  // Says where the unknown ones went, on the first reject finding there is, so they
+  // are not read as left out.
+  let unknownPointed = false;
+  const pointToUnknown = (): { shape?: string } => {
+    if (unknownPointed || unknownAfterReject.length === 0) return {};
+    unknownPointed = true;
+    const n = unknownAfterReject.length;
+    return {
+      shape:
+        `Another ${n} the catalogue does not know ${n === 1 ? 'is' : 'are'} counted under ` +
+        '“Some cookies could not be identified”.',
+    };
+  };
+
+  // Cookies still set after reject, whether the arrival had them or the reject run
+  // did before its press. Ones the press itself set are `set-after-reject` below.
+  const surviving = notNecessary(stillSet.filter(isKnown));
+  if (surviving.length > 0) {
+    findings.push(
+      finding(
+        'active-after-reject',
+        'Tracking was still active after the visitor pressed reject',
+        `After the check pressed the banner’s reject button, ${notNecessaryPhrase(surviving.length)}` +
+          `${describe(surviving)} ${was(surviving.length)} still set.`,
+        surviving,
+        [],
+        { listed: { cookies: surviving }, ...pointToUnknown() },
+      ),
+    );
   }
 
-  // `newAfterClick`, not everything still set: this finding is about a banner
-  // that sets tracking when a visitor declines, which is worse than one that
-  // merely fails to clear what was already there. `active-after-reject` above
-  // covers the latter. The delta is the run's own, against its own arrival.
-  const addedAfterReject = notNecessary(cookiesOf(reject.newAfterClick).filter(isKnown));
+  // Only what the press set, which is worse than failing to clear what was there:
+  // the banner started something when the visitor declined.
+  const addedAfterReject = notNecessary(setByReject.filter(isKnown));
   if (addedAfterReject.length > 0) {
     findings.push(
       finding(
@@ -377,6 +452,33 @@ export const assess = (raw: unknown): Assessment => {
           `pressed${describe(addedAfterReject)}.`,
         addedAfterReject,
         [],
+        { listed: { cookies: addedAfterReject }, ...pointToUnknown() },
+      ),
+    );
+  }
+
+  // A host contacted after reject is not, on its own, tracking: the banner reports
+  // the refusal, and the page still loads its fonts and files. So it is its own,
+  // milder finding rather than part of `active-after-reject`.
+  const contacted = rejectPressed ? [...new Set(hostsOf(reject.hostsAfterClick).map((h) => h.toLowerCase()))] : [];
+  if (contacted.length > 0) {
+    const domains = group(contacted.map(registrableDomain));
+    findings.push(
+      finding(
+        'contacted-after-reject',
+        'Other companies were still contacted after the visitor pressed reject',
+        `After the check pressed the banner’s reject button, the page contacted ` +
+          `${plural(contacted.length, 'third-party host')}, belonging to ${plural(domains.length, 'domain')}.`,
+        [],
+        contacted,
+        {
+          groups: domains,
+          groupLabel: { of: 'Domain', unit: 'Hosts' },
+          shape:
+            'Some of these may be the banner recording the refusal, or a font or file the page needs. The ' +
+            'check cannot tell which of them carry tracking.',
+          listed: { hosts: contacted },
+        },
       ),
     );
   }
@@ -405,8 +507,9 @@ export const assess = (raw: unknown): Assessment => {
       cookies: cookies.length,
       thirdPartyHosts: hosts.length,
       consentTested: tested,
-      rejectPressed: reject.pressed === true,
+      rejectPressed,
       bannerFound: consent.bannerFound === true,
+      truncated: result.truncated === true,
     },
     findings,
     clean: findings.length === 0,
@@ -419,8 +522,8 @@ export const assess = (raw: unknown): Assessment => {
     })),
     notes,
     inventory: {
-      cookies: cookies.map((cookie) => ({ ...cookie, vendor: categorise(cookie.name).vendor })),
-      hosts: hosts.map((host) => ({ host, domain: registrableDomain(host) })),
+      cookies: cookies.map(inventoryCookie),
+      hosts: hosts.map(inventoryHost),
     },
     scope: SCOPE,
     noVerdict: NO_VERDICT,

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -10,6 +10,7 @@ import { MAX_PAGE_TEXT, pageText } from '../src/pageText.ts';
 import { type Limits, parsePlan } from '../src/plan.ts';
 import { buildConsent, buildConsentRun, buildSubmission, type CapturedCookie } from '../src/result.ts';
 import {
+  KEPT_REPORTS,
   readResult,
   savePlan,
   saveResult,
@@ -677,6 +678,20 @@ describe('submit_check results and the rendered forms', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  test('the result is stored under the submitted check ID, and a response for another check is not stored', () => {
+    const dir = dataDir();
+    const { checkId: _, ...withoutId } = result;
+    assert.equal(saveResult(dir, payload({ tool_response: { structuredContent: withoutId } })), true);
+    assert.deepEqual(readResult(dir, CHECK_ID), withoutId);
+
+    const other = dataDir();
+    const elsewhere = { ...result, checkId: '99999999-2222-4333-8444-555555555555' };
+    assert.equal(saveResult(other, payload({ tool_response: { structuredContent: elsewhere } })), false);
+    assert.equal(readResult(other, CHECK_ID), null);
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(other, { recursive: true, force: true });
+  });
+
   test('a response with no valid check ID is ignored rather than stored', () => {
     const dir = dataDir();
     assert.equal(saveResult(dir, payload({ tool_response: { structuredContent: { checkId: 'nope' } } })), false);
@@ -716,23 +731,44 @@ describe('submit_check results and the rendered forms', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('a sweep deletes an expired report directory, not only loose files', () => {
+  /** A check ID whose last block is `n`, so each one is a distinct, valid UUID. */
+  const idFor = (n: number) => `11111111-2222-4333-8444-${String(n).padStart(12, '0')}`;
+
+  test('a report the user was given a path to is kept past the 30-minute window', () => {
     const dir = dataDir();
-    for (const name of ['artifact.html', 'report.html', 'report.md']) writeRendered(dir, CHECK_ID, name, 'x');
-    const reportDir = join(dir, 'reports', CHECK_ID);
-    assert.equal(existsSync(reportDir), true);
-    const old = Date.now() / 1000 - 31 * 60;
-    utimesSync(reportDir, old, old);
+    writeRendered(dir, CHECK_ID, 'report.html', 'x');
+    const old = Date.now() / 1000 - 24 * 60 * 60;
+    utimesSync(join(dir, 'reports', CHECK_ID), old, old);
     sweep(dir);
-    assert.equal(existsSync(reportDir), false, 'reports/ holds directories, so the sweep must recurse');
+    assert.equal(existsSync(join(dir, 'reports', CHECK_ID, 'report.html')), true);
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('a sweep leaves a report that is still inside the window', () => {
+  test(`a sweep keeps the newest ${KEPT_REPORTS} reports and deletes the folders of older ones`, () => {
     const dir = dataDir();
-    writeRendered(dir, CHECK_ID, 'report.html', 'x');
+    const now = Date.now() / 1000;
+    for (let n = 0; n <= KEPT_REPORTS; n++) {
+      for (const name of ['artifact.html', 'report.html', 'report.md']) writeRendered(dir, idFor(n), name, 'x');
+      // n = 0 is the oldest.
+      utimesSync(join(dir, 'reports', idFor(n)), now - (KEPT_REPORTS - n) * 60, now - (KEPT_REPORTS - n) * 60);
+    }
     sweep(dir);
-    assert.equal(existsSync(join(dir, 'reports', CHECK_ID, 'report.html')), true);
+    assert.equal(
+      existsSync(join(dir, 'reports', idFor(0))),
+      false,
+      'reports/ holds directories, so the sweep must recurse',
+    );
+    assert.equal(readdirSync(join(dir, 'reports')).length, KEPT_REPORTS);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('results and reports sit in folders only this user can open', () => {
+    const dir = dataDir();
+    saveResult(dir, payload());
+    writeRendered(dir, CHECK_ID, 'report.html', 'x');
+    for (const folder of [join(dir, 'results'), join(dir, 'reports'), join(dir, 'reports', CHECK_ID)]) {
+      assert.equal(statSync(folder).mode & 0o777, 0o700, folder);
+    }
     rmSync(dir, { recursive: true, force: true });
   });
 });

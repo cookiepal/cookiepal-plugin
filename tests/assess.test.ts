@@ -50,6 +50,22 @@ const tracked = () =>
     summary: { total: 2, byCategory: byCategory({ necessary: 1, analytics: 1 }) },
   });
 
+/** A tested consent action whose reject press left `cookies` set, `added` among them, and `hosts` contacted. */
+const afterReject = (cookies: unknown[], added: unknown[], hosts: string[] = []) =>
+  result({
+    summary: {
+      total: 1,
+      byCategory: byCategory({ necessary: 1 }),
+      afterReject: { total: cookies.length, byCategory: byCategory({}), stillContactedHosts: hosts },
+    },
+    consent: {
+      tested: true,
+      bannerFound: true,
+      accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
+      reject: { pressed: true, cookiesAfterClick: cookies, newAfterClick: added, hostsAfterClick: hosts },
+    },
+  });
+
 const findingOf = (raw: unknown, kind: string) => {
   const found = assess(raw).findings.find((entry) => entry.kind === kind);
   assert.ok(found, `expected a ${kind} finding`);
@@ -90,7 +106,7 @@ describe('assess', () => {
   });
 
   test('tracking still active after reject is explained, and is a finding under the CCPA too', () => {
-    const finding = findingOf(
+    const raw = () =>
       result({
         cookies: [cookie('_ga', 'analytics')],
         summary: {
@@ -113,17 +129,25 @@ describe('assess', () => {
             hostsAfterClick: ['www.google-analytics.com'],
           },
         },
-      }),
-      'active-after-reject',
-    );
+      });
+    const finding = findingOf(raw(), 'active-after-reject');
     assert.ok(finding.byLaw.every(({ applies }) => applies));
     assert.match(finding.detail, /still set/);
-    assert.match(finding.detail, /still being contacted/);
     assert.deepEqual(
       finding.cookies.map(({ name }) => name),
       ['_ga'],
     );
-    assert.deepEqual(finding.hosts, ['www.google-analytics.com']);
+    // A host is its own, milder finding: it may be the banner recording the refusal.
+    assert.deepEqual(finding.hosts, []);
+    const contacted = findingOf(raw(), 'contacted-after-reject');
+    assert.deepEqual(contacted.hosts, ['www.google-analytics.com']);
+    assert.match(contacted.shape ?? '', /cannot tell which of them carry tracking/);
+  });
+
+  test('a host contacted after reject never reads as tracking still active', () => {
+    const assessment = assess(afterReject([], [], ['consent.cookiebot.com']));
+    assert.ok(!assessment.findings.some(({ kind }) => kind === 'active-after-reject'));
+    assert.ok(assessment.findings.some(({ kind }) => kind === 'contacted-after-reject'));
   });
 
   /**
@@ -187,6 +211,94 @@ describe('assess', () => {
       ['_gid'],
     );
     assert.ok(finding.byLaw.every(({ applies }) => applies));
+  });
+
+  test('an unknown cookie set by pressing reject is counted under the unidentified finding', () => {
+    const assessment = assess(afterReject([cookie('wpx_tok', 'other')], [cookie('wpx_tok', 'other')]));
+    assert.equal(assessment.clean, false, 'reject did set something, so the read is not clean');
+    const finding = findingOf(
+      afterReject([cookie('wpx_tok', 'other')], [cookie('wpx_tok', 'other')]),
+      'unidentified-cookies',
+    );
+    assert.match(
+      finding.detail,
+      /^1 cookie present after the reject button was pressed was not in the open-source catalogue/,
+    );
+    assert.deepEqual(
+      finding.listed.cookies.map(({ name }) => name),
+      ['wpx_tok'],
+    );
+  });
+
+  test('beside known ones, an unknown cookie set by reject is pointed to, not left out', () => {
+    const raw = afterReject(
+      [cookie('_gid', 'analytics'), cookie('wpx_tok', 'other')],
+      [cookie('_gid', 'analytics'), cookie('wpx_tok', 'other')],
+    );
+    assert.match(findingOf(raw, 'set-after-reject').shape ?? '', /Another 1 the catalogue does not know is counted/);
+    assert.match(findingOf(raw, 'unidentified-cookies').detail, /^1 cookie present after the reject button/);
+  });
+
+  test('an unknown cookie still set after reject is counted, even when arrival never had it', () => {
+    // The reject run is its own load: it had wpx_track before the press, the main arrival did not.
+    const assessment = assess(afterReject([cookie('wpx_track', 'other')], []));
+    assert.equal(assessment.clean, false);
+    const finding = findingOf(afterReject([cookie('wpx_track', 'other')], []), 'unidentified-cookies');
+    assert.deepEqual(
+      finding.listed.cookies.map(({ name }) => name),
+      ['wpx_track'],
+    );
+  });
+
+  test('an unknown cookie on arrival that survives reject is counted once, and said to survive', () => {
+    const raw = result({
+      cookies: [cookie('wpx', 'other')],
+      consent: {
+        tested: true,
+        bannerFound: true,
+        reject: { pressed: true, cookiesAfterClick: [cookie('wpx', 'other')], newAfterClick: [cookie('wpx', 'other')] },
+      },
+    });
+    const finding = findingOf(raw, 'unidentified-cookies');
+    assert.equal(finding.cookies.length, 1);
+    assert.equal(
+      finding.groups.reduce((total, { count }) => total + count, 0),
+      1,
+    );
+    assert.match(finding.detail, /After the reject button was pressed, 1 unknown cookie was present\./);
+  });
+
+  test('a cookie the arrival had is still set after reject, never also set by it', () => {
+    // The reject run's own arrival lacked _gid, so its delta says new; the read's arrival had it.
+    const raw = result({
+      cookies: [cookie('_gid', 'analytics')],
+      consent: {
+        tested: true,
+        bannerFound: true,
+        reject: {
+          pressed: true,
+          cookiesAfterClick: [cookie('_gid', 'analytics')],
+          newAfterClick: [cookie('_gid', 'analytics')],
+        },
+      },
+    });
+    const assessment = assess(raw);
+    assert.ok(!assessment.findings.some(({ kind }) => kind === 'set-after-reject'));
+    assert.ok(assessment.findings.some(({ kind }) => kind === 'active-after-reject'));
+  });
+
+  test('a cookie the press set is not also reported as still set', () => {
+    const assessment = assess(afterReject([cookie('_gid', 'analytics')], [cookie('_gid', 'analytics')]));
+    assert.ok(assessment.findings.some(({ kind }) => kind === 'set-after-reject'));
+    assert.ok(!assessment.findings.some(({ kind }) => kind === 'active-after-reject'));
+  });
+
+  test('a truncated clean result says it covers only what the check could read', () => {
+    const assessment = assess(result({ truncated: true }));
+    assert.equal(assessment.clean, true);
+    for (const text of [renderTerminal(assessment), renderReport(assessment)]) {
+      assert.match(text, /hit its size limits, so this covers only what it could read/);
+    }
   });
 
   test('a clean result says what was checked and what was not', () => {
@@ -254,6 +366,27 @@ describe('assess', () => {
     assert.equal(finding.cookies.length, 30, 'the finding still carries them all for the inventory');
   });
 
+  test('hosts are grouped by the public suffix list, private suffixes included', () => {
+    const finding = findingOf(
+      result({ thirdPartyHosts: ['jack.github.io', 'other.github.io', 'cdn.example.co.uk'] }),
+      'hosts-before-consent',
+    );
+    assert.deepEqual(finding.groups, [
+      { label: 'example.co.uk', count: 1 },
+      { label: 'jack.github.io', count: 1 },
+      { label: 'other.github.io', count: 1 },
+    ]);
+  });
+
+  test('the GDPR line carries the ePrivacy device storage rule, labelled as ePrivacy', () => {
+    const gdpr = findingOf(tracked(), 'tracking-before-consent').byLaw.find(({ law }) => law === 'gdpr');
+    assert.match(gdpr?.text ?? '', /Under the ePrivacy Directive art\. 5\(3\), which applies alongside the GDPR/);
+    assert.match(
+      assess(result()).laws.find(({ law }) => law === 'gdpr')?.asks ?? '',
+      /ePrivacy Directive art\. 5\(3\)/,
+    );
+  });
+
   test('hosts are grouped by registrable domain, including multi-part suffixes', () => {
     const finding = findingOf(
       result({ thirdPartyHosts: ['a.pubmatic.com', 'b.pubmatic.com', 'x.uol.com.br'] }),
@@ -309,6 +442,58 @@ describe('assess', () => {
       assert.ok(!/\bfetch\s*\(|node:https?|XMLHttpRequest|require\(['"]https?/.test(source), file);
       assert.ok(!/https?:\/\/(?!fonts\.(googleapis|gstatic)\.com|www\.w3\.org|cai\.gouv\.qc\.ca)/.test(source), file);
     }
+  });
+});
+
+describe('what reject left behind', () => {
+  const raw = () =>
+    afterReject(
+      [cookie('_ga', 'analytics'), cookie('_gid', 'analytics')],
+      [cookie('_gid', 'analytics')],
+      ['www.google-analytics.com'],
+    );
+
+  test('every form names the cookies and hosts, which the arrival inventory does not hold', () => {
+    const assessment = assess(raw());
+    for (const [form, text] of [
+      ['terminal', renderTerminal(assessment)],
+      ['markdown', renderMarkdownDocument(assessment)],
+      ['artifact', renderReport(assessment)],
+      ['html', renderDocument(assessment)],
+    ]) {
+      assert.match(text, /Read after the reject button was pressed/, form);
+      for (const name of ['_ga', '_gid', 'www.google-analytics.com'])
+        assert.ok(text.includes(name), `${form}: ${name}`);
+    }
+  });
+
+  test('the page does not send them to the arrival inventory', () => {
+    const html = renderReport(assess(raw()));
+    const block = (title: string) => {
+      const start = html.indexOf(title);
+      return html.slice(start, html.indexOf('</article>', start));
+    };
+    assert.ok(!block('Tracking was still active after').includes('href="#inventory'));
+    assert.ok(!block('New cookies were set by pressing reject').includes('href="#inventory'));
+  });
+});
+
+describe('the vendor column', () => {
+  const inventory = () =>
+    assess(
+      result({
+        cookies: [cookie('OptanonConsent', 'performance'), cookie('zz_mystery', 'other')],
+        summary: { total: 2, byCategory: byCategory({ performance: 1, other: 1 }) },
+      }),
+    );
+
+  test('says no vendor named for a known cookie, and not recognised only for an unknown one', () => {
+    const md = renderInventory(inventory());
+    assert.match(md, /\| OptanonConsent \|[^\n]*_no vendor named_ \|/);
+    assert.match(md, /\| zz\\_mystery \|[^\n]*_not recognised_ \|/);
+    const html = renderReport(inventory());
+    assert.match(html, /OptanonConsent<\/td>(?:(?!<\/tr>).)*no vendor named/);
+    assert.match(html, /zz_mystery<\/td>(?:(?!<\/tr>).)*not recognised/);
   });
 });
 
@@ -417,13 +602,18 @@ describe('renderTerminal', () => {
         tested: true,
         bannerFound: true,
         accept: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
-        reject: { pressed: true, cookiesAfterClick: [], newAfterClick: [], hostsAfterClick: [] },
+        reject: {
+          pressed: true,
+          cookiesAfterClick: [cookie('_ga', 'analytics')],
+          newAfterClick: [],
+          hostsAfterClick: [],
+        },
       },
     });
-    assert.ok(
-      text.indexOf('still active after the visitor pressed reject') < text.indexOf('set before the visitor agreed'),
-      'the reject finding leads',
-    );
+    const reject = text.indexOf('still active after the visitor pressed reject');
+    const arrival = text.indexOf('set before the visitor agreed');
+    assert.ok(reject >= 0 && arrival >= 0, 'both findings are there');
+    assert.ok(reject < arrival, 'the reject finding leads');
     for (const name of ['GDPR', 'CCPA and CPRA', 'LGPD', 'Law 25']) assert.ok(text.includes(`**${name}**`), name);
   });
 
@@ -433,6 +623,22 @@ describe('renderTerminal', () => {
     assert.ok(!text.includes('flagged |'), 'no law-by-finding grid: it needs five columns to read');
     assert.ok(!/█|▇|▆/.test(text), 'no bars');
     assert.match(text, /^## CookiePal check: /);
+  });
+
+  test('the inventory offer reads right for none, one and many', () => {
+    assert.match(read(), /list all 2 cookies\._/);
+    assert.match(
+      renderTerminal(assess(result({ thirdPartyHosts: ['x.test'] }))),
+      /list the 1 cookie and the 1 host\._/,
+    );
+  });
+
+  test('a part that is the whole is not counted as one of itself', () => {
+    const raw = result({
+      cookies: [cookie('wpx', 'other')],
+      summary: { total: 1, byCategory: byCategory({ other: 1 }) },
+    });
+    assert.match(findingOf(raw, 'unidentified-cookies').detail, /^The 1 cookie set before consent was not/);
   });
 
   test('never prints the inventory unasked, but says it is there', () => {
@@ -455,6 +661,21 @@ describe('renderTerminal', () => {
     assert.match(text, /\| Cookie domain \| Cookies \|/);
     assert.match(text, /\| Domain \| Hosts \|/);
     assert.match(text, /Another 1 the catalogue does not know is counted under the next finding/);
+  });
+
+  test('a backslash before a pipe cannot undo its escape', () => {
+    const text = renderInventory(
+      assess(result({ cookies: [cookie('a\\|b', 'analytics')], summary: { total: 1, byCategory: byCategory({}) } })),
+    );
+    const row = text.split('\n').find((line) => line.includes('a\\')) ?? '';
+    // A pipe is a cell border unless an odd number of backslashes stands before it.
+    const borders = [...row.matchAll(/(\\*)\|/g)].filter(([, slashes]) => slashes.length % 2 === 0).length;
+    assert.equal(borders, 5, `the row keeps its four cells: ${row}`);
+  });
+
+  test('the page cannot turn the heading into a link', () => {
+    const text = renderTerminal(assess(result({ page: 'https://example.com/[Click here](https://evil.test)' })));
+    assert.ok(text.includes('\\[Click here\\]\\(https://evil.test\\)'), text.split('\n')[0]);
   });
 
   test('a cookie name with a pipe cannot break the table it sits in', () => {

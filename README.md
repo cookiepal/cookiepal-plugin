@@ -133,7 +133,7 @@ Every sentence it prints about a law is fixed text that ships with the plugin an
 /cookiepal:check https://example.com terminal    # straight to your terminal
 ```
 
-Same words every time. Only the styling differs. Before publishing anything, the first check asks whether to; **the default is no**, which keeps the read in a local HTML file, and your answer is remembered. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. Set one as your default if you would rather artifacts were never used.
+Same words every time. Only the styling differs. Publishing uploads the page checked, every cookie name and every third-party host to claude.ai, so before publishing anything the first check asks whether to; **the default is no**, which keeps the read in a local HTML file, and your answer is remembered. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. The HTML and `.md` files for your last 20 checks are kept in the plugin's data folder. Set one as your default if you would rather artifacts were never used.
 
 ### 👆 It only ever clicks one button
 
