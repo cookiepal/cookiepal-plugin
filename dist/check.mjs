@@ -10141,8 +10141,6 @@ var PAIRS = [
   { name: "outlined buttons", foreground: "accent", background: "background" },
   { name: "filled buttons", foreground: "buttonText", background: "accent" }
 ];
-var PANEL_LIFT = Math.round(2.55 * 10);
-var panelBackground = (background) => toHex(fromHex(background).map((channel) => Math.min(255, Math.round(channel * 255) + PANEL_LIFT) / 255));
 var MAX_INPUT_LENGTH = 64;
 var ColourError = class extends Error {
 };
@@ -10246,6 +10244,8 @@ var luminance = (hex) => {
   const [r, g, b] = fromHex(hex).map(decode);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
+var PANEL_LIFT = Math.round(2.55 * 10);
+var panelBackground = (background) => toHex(fromHex(background).map((channel) => Math.min(255, Math.round(channel * 255) + PANEL_LIFT) / 255));
 var contrast = (one, other) => {
   const [lighter, darker] = [luminance(one), luminance(other)].sort((a, b) => b - a);
   return (lighter + 0.05) / (darker + 0.05);
