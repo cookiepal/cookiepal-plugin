@@ -1,6 +1,7 @@
 ---
 name: verify-installation
 description: Gets the CookiePal banner tag to paste into a site, and confirms it is live by loading the site's own page in a browser on this machine and uploading what it found, which sets the domain's banner verification status in CookiePal. Use when the user runs /cookiepal:verify-installation, asks for their CookiePal install snippet or script tag, asks where to paste it, asks to verify, check or confirm that their CookiePal banner is installed or live, or asks why CookiePal still shows their banner as not installed.
+argument-hint: '[url]'
 ---
 
 # Get the install tag, and verify it is live
