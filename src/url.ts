@@ -1,3 +1,12 @@
+import { getDomain } from 'tldts';
+
+/**
+ * The registrable domain from the public suffix list, private domains included,
+ * so `app.cookiepal.io` and `mcp.cookiepal.io` share `cookiepal.io` while
+ * `jack.github.io` and `other.github.io` stay apart. Null for an IP or `localhost`.
+ */
+export const site = (host: string): string | null => getDomain(host, { allowPrivateDomains: true });
+
 /**
  * CookiePal's banner accepts every category when the page URL contains
  * `cookiepal-crawl=true` or `crawl=true` anywhere, so a check of such a URL would
