@@ -20,8 +20,6 @@
 ## 📺 Demo
 
 <div align="center">
-<!-- MEDIA: hero.gif. One /cookiepal:check run, start to verdict.
-     Record with docs/media/hero.tape. See docs/media/README.md. -->
 <img src="docs/media/hero.gif" alt="A CookiePal check running in Claude Code" width="800" />
 </div>
 
@@ -37,7 +35,7 @@
   - [🚦 Three passes over the page](#-three-passes-over-the-page)
   - [⚖️ What each law asks for](#️-what-each-law-asks-for)
   - [📄 Four ways to read the result](#-four-ways-to-read-the-result)
-  - [👆 It only ever clicks one button](#-it-only-ever-clicks-one-button)
+  - [👆 It only ever clicks one button per run](#-it-only-ever-clicks-one-button-per-run)
 - [🔐 What is sent to CookiePal](#-what-is-sent-to-cookiepal)
   - [🆔 The install ID](#-the-install-id)
 - [🔄 Update and uninstall](#-update-and-uninstall)
@@ -89,13 +87,13 @@ Or do it yourself:
 
   Then run `/reload-plugins` in any Claude Code session that is already open.
 
-Run `/mcp` and you should see `cookiepal` listed as connected. Then:
+Run `/mcp` and you should see `plugin:cookiepal:cookiepal` listed as connected. Then:
 
 ```
 /cookiepal:check https://example.com
 ```
 
-Requires [Node.js](https://nodejs.org) 18+ and Google Chrome, Microsoft Edge, Brave or Chromium. If your browser lives somewhere unusual, point `COOKIEPAL_BROWSER` at its executable.
+Requires [Node.js](https://nodejs.org) 24+ and Google Chrome, Microsoft Edge, Brave or Chromium. If your browser lives somewhere unusual, point `COOKIEPAL_BROWSER` at its executable.
 
 ## ✨ What a check tells you
 
@@ -133,11 +131,11 @@ Every sentence it prints about a law is fixed text that ships with the plugin an
 /cookiepal:check https://example.com terminal    # straight to your terminal
 ```
 
-Same words every time. Only the styling differs. Publishing uploads the page checked, every cookie name and every third-party host to claude.ai, so before publishing anything the first check asks whether to; **the default is no**, which keeps the read in a local HTML file, and your answer is remembered. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. The HTML and `.md` files for your last 20 checks are kept in the plugin's data folder. Set one as your default if you would rather artifacts were never used.
+Same words every time. Only the styling differs. Publishing uploads the page checked, every cookie name and every third-party host to claude.ai, so before publishing anything the first check asks whether to; **the default is no**, which keeps the read in a local HTML file, and your answer is remembered. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. The HTML and `.md` files for your last 20 checks are kept in the plugin's data folder. Set one as your default if you would rather artifacts were never used: `/cookiepal:check html`, with no URL, makes the local HTML file the default.
 
-### 👆 It only ever clicks one button
+### 👆 It only ever clicks one button per run
 
-The check presses one consent button and nothing else. If it cannot find a banner, or more than one button matches, it reports what was set on arrival and tells you the consent action was not tested. **It never presses a button it is unsure of.**
+The accept run presses the banner's accept button and the reject run its reject button, and neither presses anything else. If it cannot find a banner, or more than one button matches, it reports what was set on arrival and tells you the consent action was not tested. **It never presses a button it is unsure of.**
 
 The matchers that find those buttons are delivered by CookiePal with each check, so they get better without you updating anything.
 
@@ -184,16 +182,16 @@ claude plugin update cookiepal@cookiepal
 
 Then run `/reload-plugins` in any Claude Code session that is already open. To remove it entirely:
 
-```
-/plugin uninstall cookiepal@cookiepal
-/plugin marketplace remove cookiepal
+```sh
+claude plugin uninstall cookiepal@cookiepal
+claude plugin marketplace remove cookiepal
 ```
 
 ## 📦 What is in this repository
 
 The plugin itself: the manifests, the `/cookiepal:check` command, the `check-one-page` skill, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan and each result to that check.
 
-Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its one dependency. Rebuild it with `pnpm build`; CI fails when it is out of date.
+Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its dependencies. Rebuild it with `pnpm build`; CI fails when it is out of date.
 
 `plan_check` and `submit_check` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
 

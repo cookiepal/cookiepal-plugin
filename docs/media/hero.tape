@@ -7,9 +7,8 @@
 #
 # Before recording, check all four:
 #   1. The plugin is installed in whatever Claude Code this shell starts.
-#   2. The MCP server it points at is reachable. Prod has no DNS record yet,
-#      so this needs either prod live or .mcp.json pointed at a pre-release
-#      server. If you do that, keep that hostname off screen.
+#   2. The MCP server it points at is reachable. If .mcp.json points anywhere
+#      other than the public server, keep that hostname off screen.
 #   3. Run the check once by hand first, so the permission prompts are already
 #      answered and the recording is not three approval dialogs.
 #   4. Time that run, then set the Sleep below to just past the verdict.
