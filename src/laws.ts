@@ -246,7 +246,7 @@ export const SCOPE =
  */
 export const FLAG_KEY = (strong: (term: string) => string): string =>
   `Everything marked ${strong('flagged')} is explained below. ${strong('Not flagged')} means that law does not ` +
-  'treat it as a problem, and the reason is given with the finding. Neither is a verdict on the page.';
+  'treat it as a problem on its own, and the reason is given with the finding. Neither is a verdict on the page.';
 
 /** The rule, stated in the output itself and not only in the skill. */
 export const NO_VERDICT =
