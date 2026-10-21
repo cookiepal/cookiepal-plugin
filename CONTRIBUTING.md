@@ -21,7 +21,7 @@ claude plugin install cookiepal@cookiepal
 
 | Command | What it does |
 | --- | --- |
-| `pnpm build` | Bundles `src/` into `dist/check.mjs` and `dist/scan.mjs` |
+| `pnpm build` | Runs `scripts/build.ts`: bundles `src/` into `dist/check.mjs` and `dist/scan.mjs`, tldts into `dist/tldts.mjs`, and writes the cookie catalogue to `dist/cookies.json` |
 | `pnpm lint` | Biome check |
 | `pnpm lint:fix` | Biome check, writing fixes |
 | `pnpm typecheck` | `tsc` |
@@ -33,6 +33,8 @@ CI runs lint, typecheck, the `dist/` freshness check, manifest validation, the t
 ## `dist/` is committed, on purpose
 
 Claude Code installs plugins straight from git with no build step, so the bundles the skills actually run have to be in the repository. `dist/check.mjs` and `dist/scan.mjs` are generated from `src/` and its dependencies. `dist/scan.mjs` is the detached process a local scan runs in; it never bundles `@cookiepal-oss/cli`, which it installs into the plugin's own data folder at runtime instead.
+
+No file in `dist/` may be over 240 KiB, and the tests fail when one is, because the plugin directory holds any file over 256 KiB for a reviewer. That is why tldts and the `@cookiepal-oss/cookie-db` catalogue sit in their own files rather than in both bundles, and why `dist/cookies.json` keeps only the name, vendor, category and wildcard of each cookie.
 
 **Run `pnpm build` and commit `dist/` with any change to `src/`.** CI fails when the committed bundle does not match the source, including when it has been deleted or left uncommitted. Never hand-edit `dist/`.
 
