@@ -60,8 +60,13 @@ export const NOT_LOCATED: Located = {
  * It leaves the element it found on `window.__cookiepalCheckTarget`, so a
  * covered button can still be clicked without searching for it twice.
  */
-const LOCATE = function locate(banner: ConsentPlan['banner'], matchers: ButtonMatchers): Located {
+const LOCATE = function locate(
+  banner: ConsentPlan['banner'],
+  buttons: ButtonMatchers[],
+  matchers: ButtonMatchers,
+): Located {
   const CLICKABLE = 'button, input[type=button], input[type=submit], a, [role=button]';
+  const SKIP = 'script, style, noscript, template';
 
   const visible = (element: Element): boolean => {
     const box = element.getBoundingClientRect();
@@ -81,6 +86,36 @@ const LOCATE = function locate(banner: ConsentPlan['banner'], matchers: ButtonMa
 
   const clickable = (element: Element | null): element is Element =>
     !!element?.matches(CLICKABLE) && visible(element) && !navigatesAway(element);
+
+  /** Whether a button's own label, or an input's value, holds `wanted`. */
+  const labelled = (element: Element, wanted: string): boolean => {
+    const label = ((element as HTMLElement).innerText || element.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+    const value = element instanceof HTMLInputElement ? element.value.trim().toLowerCase() : '';
+    return label.includes(wanted) || value.includes(wanted);
+  };
+
+  /** Whether any tier of one button's matchers names this element. */
+  const named = (element: Element, { tags, ids, classes, texts }: ButtonMatchers): boolean =>
+    tags.includes(element.getAttribute('data-cookiepal-tag') ?? '') ||
+    ids.includes(element.id) ||
+    classes.some((className) => element.classList.contains(className)) ||
+    texts.some((wanted) => labelled(element, wanted));
+
+  const consentButton = (element: Element): boolean =>
+    clickable(element) && buttons.some((button) => named(element, button));
+
+  /** A box a banner draws itself in. The climb from a keyword goes no further than one. */
+  const boundary = (element: Element): boolean => {
+    const { position } = getComputedStyle(element);
+    return (
+      position === 'fixed' ||
+      position === 'sticky' ||
+      element.matches('dialog, [role=dialog], [role=alertdialog], [aria-modal=true]')
+    );
+  };
 
   /** The banner, or, when only a body keyword said there was one, the boxes around that keyword. */
   const roots: Element[] = [];
@@ -106,20 +141,35 @@ const LOCATE = function locate(banner: ConsentPlan['banner'], matchers: ButtonMa
     bannerFound = banner.keywords.some((keyword) => text.includes(keyword));
   }
   // A keyword says where the banner is, not only that there is one: each visible
-  // piece of text holding it is climbed to the nearest box with a button in it,
-  // and only those boxes are searched, so an "Accept" elsewhere is never pressed.
+  // element holding it is climbed to the nearest box with an accept or reject
+  // button in it, and only those boxes are searched, so an "Accept" elsewhere is
+  // never pressed. The climb gives up at a fixed, sticky or dialog box, which is
+  // where a banner ends, and at a box taller than the screen, which is the page:
+  // past that, keyword text in a hero would reach an unrelated "Decline".
   if (!roots.length && bannerFound && document.body) {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const parent = node.parentElement;
-      if (!parent || parent.closest('script, style, noscript, template') || !parent.getClientRects().length) continue;
-      const text = (node.textContent || '').replace(/\s+/g, ' ').toLowerCase();
-      if (!banner.keywords.some((keyword) => text.includes(keyword))) continue;
-      for (let box: Element | null = parent; box && box !== document.body; box = box.parentElement) {
-        if ([...box.querySelectorAll(CLICKABLE)].some(clickable)) {
+    const holds = (element: Element) =>
+      !element.matches(SKIP) &&
+      banner.keywords.some((keyword) =>
+        (element.textContent || '').replace(/\s+/g, ' ').toLowerCase().includes(keyword),
+      );
+    // The innermost elements holding a keyword, so `We use <b>cookies</b>` is
+    // found at the `<p>` even though no one text node holds the whole phrase.
+    const holders: Element[] = [];
+    const descend = (element: Element) => {
+      const inner = [...element.children].filter(holds);
+      if (inner.length) inner.forEach(descend);
+      else if (element.getClientRects().length) holders.push(element);
+    };
+    descend(document.body);
+
+    for (const holder of holders) {
+      for (let box: Element | null = holder; box && box !== document.body; box = box.parentElement) {
+        if (box.getBoundingClientRect().height > innerHeight) break;
+        if ([...box.querySelectorAll(CLICKABLE)].some(consentButton)) {
           if (!roots.includes(box)) roots.push(box);
           break;
         }
+        if (boundary(box)) break;
       }
     }
   }
@@ -193,21 +243,12 @@ const LOCATE = function locate(banner: ConsentPlan['banner'], matchers: ButtonMa
     [
       'text',
       () => {
-        const buttons = roots
+        const candidates = roots
           .flatMap((root) => [...root.querySelectorAll(CLICKABLE)])
           .filter((element) => clickable(element) && within(element));
         // The server lists the most specific label first, so "reject all" wins over "reject".
         for (const wanted of matchers.texts) {
-          const hit = only(
-            buttons.filter((element) => {
-              const label = ((element as HTMLElement).innerText || element.textContent || '')
-                .replace(/\s+/g, ' ')
-                .trim()
-                .toLowerCase();
-              const value = element instanceof HTMLInputElement ? element.value.trim().toLowerCase() : '';
-              return label.includes(wanted) || value.includes(wanted);
-            }),
-          );
+          const hit = only(candidates.filter((element) => labelled(element, wanted)));
           if (hit) return hit;
         }
         return null;
@@ -252,7 +293,7 @@ const call = (fn: unknown, ...args: unknown[]) =>
   `(${String(fn)})(${args.map((argument) => JSON.stringify(argument)).join(',')})`;
 
 export const locateExpression = (consent: ConsentPlan, matchers: ButtonMatchers): string =>
-  call(LOCATE, consent.banner, matchers);
+  call(LOCATE, consent.banner, [consent.accept, consent.reject], matchers);
 
 export const clickTargetExpression = (): string => call(CLICK_TARGET);
 

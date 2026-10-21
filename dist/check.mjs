@@ -9153,8 +9153,9 @@ var NOT_LOCATED = {
   point: null,
   covered: false
 };
-var LOCATE = function locate(banner, matchers) {
+var LOCATE = function locate(banner, buttons, matchers) {
   const CLICKABLE = "button, input[type=button], input[type=submit], a, [role=button]";
+  const SKIP = "script, style, noscript, template";
   const visible = (element) => {
     const box = element.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0 || !element.getClientRects().length) return false;
@@ -9169,6 +9170,17 @@ var LOCATE = function locate(banner, matchers) {
     return href.split("#")[0] !== here;
   };
   const clickable = (element) => !!element?.matches(CLICKABLE) && visible(element) && !navigatesAway(element);
+  const labelled = (element, wanted) => {
+    const label = (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const value = element instanceof HTMLInputElement ? element.value.trim().toLowerCase() : "";
+    return label.includes(wanted) || value.includes(wanted);
+  };
+  const named = (element, { tags, ids, classes, texts }) => tags.includes(element.getAttribute("data-cookiepal-tag") ?? "") || ids.includes(element.id) || classes.some((className) => element.classList.contains(className)) || texts.some((wanted) => labelled(element, wanted));
+  const consentButton = (element) => clickable(element) && buttons.some((button) => named(element, button));
+  const boundary = (element) => {
+    const { position } = getComputedStyle(element);
+    return position === "fixed" || position === "sticky" || element.matches("dialog, [role=dialog], [role=alertdialog], [aria-modal=true]");
+  };
   const roots = [];
   for (const id of banner.ids) {
     const found = document.getElementById(id);
@@ -9192,17 +9204,24 @@ var LOCATE = function locate(banner, matchers) {
     bannerFound = banner.keywords.some((keyword) => text.includes(keyword));
   }
   if (!roots.length && bannerFound && document.body) {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const parent = node.parentElement;
-      if (!parent || parent.closest("script, style, noscript, template") || !parent.getClientRects().length) continue;
-      const text = (node.textContent || "").replace(/\s+/g, " ").toLowerCase();
-      if (!banner.keywords.some((keyword) => text.includes(keyword))) continue;
-      for (let box = parent; box && box !== document.body; box = box.parentElement) {
-        if ([...box.querySelectorAll(CLICKABLE)].some(clickable)) {
+    const holds = (element) => !element.matches(SKIP) && banner.keywords.some(
+      (keyword) => (element.textContent || "").replace(/\s+/g, " ").toLowerCase().includes(keyword)
+    );
+    const holders = [];
+    const descend = (element) => {
+      const inner = [...element.children].filter(holds);
+      if (inner.length) inner.forEach(descend);
+      else if (element.getClientRects().length) holders.push(element);
+    };
+    descend(document.body);
+    for (const holder of holders) {
+      for (let box = holder; box && box !== document.body; box = box.parentElement) {
+        if (box.getBoundingClientRect().height > innerHeight) break;
+        if ([...box.querySelectorAll(CLICKABLE)].some(consentButton)) {
           if (!roots.includes(box)) roots.push(box);
           break;
         }
+        if (boundary(box)) break;
       }
     }
   }
@@ -9261,15 +9280,9 @@ var LOCATE = function locate(banner, matchers) {
     [
       "text",
       () => {
-        const buttons = roots.flatMap((root) => [...root.querySelectorAll(CLICKABLE)]).filter((element) => clickable(element) && within(element));
+        const candidates = roots.flatMap((root) => [...root.querySelectorAll(CLICKABLE)]).filter((element) => clickable(element) && within(element));
         for (const wanted of matchers.texts) {
-          const hit = only(
-            buttons.filter((element) => {
-              const label = (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
-              const value = element instanceof HTMLInputElement ? element.value.trim().toLowerCase() : "";
-              return label.includes(wanted) || value.includes(wanted);
-            })
-          );
+          const hit = only(candidates.filter((element) => labelled(element, wanted)));
           if (hit) return hit;
         }
         return null;
@@ -9305,7 +9318,7 @@ var call = (fn, ...args) => (
   // The arguments are JSON, so a matcher is a value in the page's script, never part of it.
   `(${String(fn)})(${args.map((argument) => JSON.stringify(argument)).join(",")})`
 );
-var locateExpression = (consent2, matchers) => call(LOCATE, consent2.banner, matchers);
+var locateExpression = (consent2, matchers) => call(LOCATE, consent2.banner, [consent2.accept, consent2.reject], matchers);
 var clickTargetExpression = () => call(CLICK_TARGET);
 var REASONS = /* @__PURE__ */ new Set(["no-banner", "no-button", "ambiguous-button", "load-failed", "click-failed"]);
 var TIERS = /* @__PURE__ */ new Set(["tag", "id", "class", "text"]);
