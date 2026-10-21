@@ -654,6 +654,58 @@ describe('the plan_check hook', () => {
   });
 });
 
+describe('the submit_check hook and the risk read', () => {
+  const CHECK_ID = '0192f3a4-1b2c-7d3e-8f40-123456789abc';
+
+  /** A PostToolUse payload as large as a busy page makes it: every cookie and host, sent and returned. */
+  const busyPayload = (count: number) => {
+    const cookies = Array.from({ length: count }, (_, i) => ({
+      name: `_tracker_${i}_${'x'.repeat(40)}`,
+      domain: `.cdn-${i}.example-advertising-network.com`,
+      path: '/',
+      expires: 1_800_000_000,
+      httpOnly: false,
+      secure: true,
+      category: 'other',
+    }));
+    const hosts = Array.from({ length: count }, (_, i) => `pixel-${i}.example-advertising-network.com`);
+    const submit = { checkId: CHECK_ID, cookies, thirdPartyHosts: hosts, truncated: false };
+    const response = { ...submit, page: 'https://example.com/', country: 'Brazil', summary: {} };
+    return JSON.stringify({
+      tool_name: 'mcp__plugin_cookiepal_cookiepal__submit_check',
+      tool_input: submit,
+      tool_response: { structuredContent: response, content: [{ type: 'text', text: JSON.stringify(response) }] },
+    });
+  };
+
+  test('a result far larger than a URL is still stored, so the read runs on a busy page', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const payload = busyPayload(400);
+    assert.ok(payload.length > 256 * 1024, `the payload is ${payload.length} bytes`);
+    const hook = await cli(['save-result'], payload, env);
+    assert.equal(hook.raw, '');
+    assert.equal(hook.code, 0);
+
+    const { output } = await cli(['assess', CHECK_ID], '', env);
+    assert.equal(output.ok, true, output.error);
+  });
+
+  test('the read carries its own notice that the names in it came from the page', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    await cli(['save-result'], busyPayload(1), env);
+    const { output } = await cli(['assess', CHECK_ID], '', env);
+    const { notice } = output as unknown as { notice?: string };
+    assert.match(notice ?? '', /read from the checked page/);
+    for (const field of ['text', 'inventoryText', 'assessment', 'files']) assert.ok(notice?.includes(field), field);
+  });
+
+  test('a malformed check ID is told apart from a result that has gone', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    assert.match((await cli(['assess', 'not-a-check'], '', env)).output.error ?? '', /not a check ID/);
+    assert.match((await cli(['assess', CHECK_ID], '', env)).output.error ?? '', /last 30 minutes/);
+  });
+});
+
 describe('the plan_check guard', () => {
   const guard = (url: string) =>
     cli(['guard-plan'], JSON.stringify({ hook_event_name: 'PreToolUse', tool_input: { url } }));
