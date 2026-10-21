@@ -460,11 +460,14 @@ const pickCookies = (cookies: CapturedCookie[]): CapturedCookie[] =>
     sameSite,
   }));
 
-/** Runs one fixed expression in the page. Anything the page throws or returns unusably reads as null. */
+/**
+ * Runs one fixed expression in the page, awaiting it if it returns a promise.
+ * Anything the page throws, returns unusably or takes too long over reads as null.
+ */
 const evaluate = async (cdp: Cdp, sessionId: string, expression: string): Promise<unknown> => {
   try {
     const answer = (await withTimeout(
-      cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: false }, sessionId),
+      cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId),
       5000,
       'evaluate',
     )) as { result?: { value?: unknown }; exceptionDetails?: unknown };

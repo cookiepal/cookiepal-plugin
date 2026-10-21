@@ -21,6 +21,14 @@ const MAX_SRC = 2048;
 const MAX_TAG = 1024;
 /** How many matching scripts are worth reporting. A page with more is already broken. */
 const MAX_MATCHES = 10;
+/**
+ * How long a found tag's banner has to say it is running. The crawler polls the
+ * same flag for up to ten seconds; this reads it after the page has settled, so
+ * a script that was ever going to run has long since started. It stays under
+ * the five seconds `evaluate` allows, so a slow banner is a reading, not a
+ * timeout.
+ */
+const BANNER_WAIT_MS = 4000;
 
 export interface FoundTag {
   /** The `src` of the CookiePal banner script the page loads, or null when it loads none. */
@@ -29,9 +37,16 @@ export interface FoundTag {
   tag: string | null;
   /** How many CookiePal banner scripts were found: more than one is worth telling the user about. */
   count: number;
+  /**
+   * Whether the banner said it is running, through the same
+   * `window.cookiepal.ui.bannerIsInstalled` the crawler reads. A tag can be in
+   * the page and never run: an auto-blocking consent tool retypes it to
+   * `text/plain`, or a content security policy blocks the CDN.
+   */
+  bannerRan: boolean;
 }
 
-export const NOT_FOUND: FoundTag = { scriptSrc: null, tag: null, count: 0 };
+export const NOT_FOUND: FoundTag = { scriptSrc: null, tag: null, count: 0, bannerRan: false };
 
 /**
  * Runs in the page. One self-contained function with no imports and no closure
@@ -49,8 +64,11 @@ export const NOT_FOUND: FoundTag = { scriptSrc: null, tag: null, count: 0 };
  * someone else's CookiePal tag above its own — exactly what "I pasted the wrong
  * one, then added the right one" looks like — would otherwise report the wrong
  * script and read as not installed.
+ *
+ * When there is a tag, it then waits up to `waitMs` for the banner to say it is
+ * running, as the crawler does, and resolves with whether it did.
  */
-const FIND = function find(maxSrc: number, maxTag: number, maxMatches: number) {
+const FIND = function find(maxSrc: number, maxTag: number, maxMatches: number, waitMs: number) {
   const CLIENT_DATA = /\/client_data\/[^/]+\/script\.js(?:[?#]|$)/;
 
   const srcOf = (element: Element): string => {
@@ -74,7 +92,7 @@ const FIND = function find(maxSrc: number, maxTag: number, maxMatches: number) {
   const scripts = Array.prototype.slice.call(document.querySelectorAll('script[src]')) as Element[];
   const found = scripts.filter((script) => CLIENT_DATA.test(srcOf(script)));
 
-  if (found.length === 0) return { matches: [], count: 0 };
+  if (found.length === 0) return { matches: [], count: 0, bannerRan: false };
 
   /**
    * Each tag is rebuilt from the attributes that are evidence, never sliced out
@@ -100,14 +118,29 @@ const FIND = function find(maxSrc: number, maxTag: number, maxMatches: number) {
     return { src: src.slice(0, maxSrc), tag: tag.slice(0, maxTag) };
   };
 
-  return {
-    matches: found.slice(0, maxMatches).map(describe),
-    count: found.length,
+  const matches = found.slice(0, maxMatches).map(describe);
+  const running = (): boolean => {
+    try {
+      const { cookiepal } = window as unknown as { cookiepal?: { ui?: { bannerIsInstalled?: unknown } } };
+      return cookiepal?.ui?.bannerIsInstalled === true;
+    } catch {
+      return false;
+    }
   };
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const poll = () => {
+      const ran = running();
+      if (ran || Date.now() - started >= waitMs) resolve({ matches, count: found.length, bannerRan: ran });
+      else setTimeout(poll, 250);
+    };
+    poll();
+  });
 };
 
 /** The expression evaluated in the page. Its only arguments are this file's own numbers. */
-export const findTagExpression = (): string => `(${FIND.toString()})(${MAX_SRC}, ${MAX_TAG}, ${MAX_MATCHES})`;
+export const findTagExpression = (): string =>
+  `(${FIND.toString()})(${MAX_SRC}, ${MAX_TAG}, ${MAX_MATCHES}, ${BANNER_WAIT_MS})`;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -126,8 +159,12 @@ const sameScript = (a: string, b: string): boolean => {
 /**
  * Reads what the page returned, holding it to the shape and the grammar the
  * server's evidence schema accepts: printable ASCII on one line, within the
- * caps above. A page that returns anything else reads as no tag found rather
- * than as a failed parse, because a page can return whatever it likes.
+ * caps above.
+ *
+ * Null when there is no reading at all: the read timed out, the page navigated
+ * away mid-read, or it threw, and `evaluate` returned nothing usable. That is a
+ * page that was never read, not a page without a banner, and the caller reports
+ * it as unread so a working install is not marked failed.
  *
  * `expectedScriptUrl` is this domain's own script, from the server. When the
  * page carries several banner tags, the one that matches it is the one
@@ -136,8 +173,9 @@ const sameScript = (a: string, b: string): boolean => {
  * decides — it compares the reported `src` against its own copy — this only
  * stops the wrong one of several being the one it sees.
  */
-export const parseFoundTag = (value: unknown, expectedScriptUrl?: string): FoundTag => {
-  if (!isRecord(value) || !Array.isArray(value.matches)) return NOT_FOUND;
+export const parseFoundTag = (value: unknown, expectedScriptUrl?: string): FoundTag | null => {
+  if (!isRecord(value) || !Array.isArray(value.matches)) return null;
+  const bannerRan = value.bannerRan === true;
 
   const text = (field: unknown, max: number): string | null => {
     if (typeof field !== 'string' || field.length === 0 || field.length > max) return null;
@@ -163,7 +201,7 @@ export const parseFoundTag = (value: unknown, expectedScriptUrl?: string): Found
 
   const chosen = (expectedScriptUrl && matches.find((m) => sameScript(m.scriptSrc, expectedScriptUrl))) || matches[0];
 
-  return { ...chosen, count: Math.max(count, matches.length) };
+  return { ...chosen, count: Math.max(count, matches.length), bannerRan };
 };
 
 /**
