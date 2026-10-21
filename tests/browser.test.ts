@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -650,21 +659,39 @@ describe('install ID consent through the CLI', () => {
   // The hook is what opens the gate, and only for an erasure that actually ran.
   // Every shape below is one a PostToolUse payload really takes, and all but the
   // last must leave the gate shut: it fails closed or it is not a gate.
+  /** Moves every recorded erasure back past the gap, as if the next one came a while later. */
+  const backdateErasures = (env: Record<string, string>) => {
+    const path = join(env.COOKIEPAL_DATA_DIR, 'forgotten-install-ids.json');
+    // A response that kept the gate shut wrote no marker, so there is nothing to move.
+    if (!existsSync(path)) return;
+    const forgotten = JSON.parse(readFileSync(path, 'utf8')) as Record<string, number[]>;
+    const earlier = Object.fromEntries(
+      Object.entries(forgotten).map(([id, times]) => [id, times.map((time) => time - 60_000)]),
+    );
+    writeFileSync(path, JSON.stringify(earlier));
+  };
+
   const sharedWith = async (env: Record<string, string>) =>
     (await cli(['consent', 'share'], '', env)).output.consent?.installId ?? '';
 
   for (const [name, response] of [
-    ['an error flag', { isError: true, structuredContent: { deleted: 0, remaining: 2 } }],
+    // Both error cases otherwise claim a complete erasure, so only the error flag shuts them.
+    ['an error flag', { isError: true, structuredContent: { deleted: 0, remaining: 0 } }],
+    ['a content-only error', { content: [{ type: 'text', text: '{"isError":true,"deleted":0,"remaining":0}' }] }],
     ['a partial erasure', { isError: false, structuredContent: { deleted: 2, remaining: 5 } }],
     ['a plain string failure', 'Deletion is not available yet.'],
-    ['a content-only error', { content: [{ type: 'text', text: '{"isError":true}' }] }],
+    ['a reply with no count of what it deleted', { structuredContent: { remaining: 0 } }],
     ['a shape it cannot read', { nothing: 'useful' }],
   ] as [string, unknown][]) {
     test(`the forget_install hook keeps the gate shut on ${name}`, async () => {
       const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
       const installId = await sharedWith(env);
 
-      await cli(['save-forgotten'], JSON.stringify({ tool_input: { installId }, tool_response: response }), env);
+      const payload = JSON.stringify({ tool_input: { installId }, tool_response: response });
+      // Twice, far enough apart, so only the response itself can keep the gate shut.
+      await cli(['save-forgotten'], payload, env);
+      backdateErasures(env);
+      await cli(['save-forgotten'], payload, env);
       const refused = (await cli(['consent', 'decline'], '', env)).output;
 
       assert.equal(refused.ok, false);
@@ -685,6 +712,7 @@ describe('install ID consent through the CLI', () => {
       await cli(['save-forgotten'], payload, env);
       assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
 
+      backdateErasures(env);
       await cli(['save-forgotten'], payload, env);
       const allowed = (await cli(['consent', 'decline'], '', env)).output;
 
@@ -704,6 +732,7 @@ describe('install ID consent through the CLI', () => {
     });
 
     await cli(['save-forgotten'], payload, env);
+    backdateErasures(env);
     await cli(['save-forgotten'], payload, env);
     await cli(['prepare'], 'https://example.com', env);
 
@@ -856,6 +885,42 @@ describe('the plan_check guard', () => {
     const url = `https://example.com/?token=${'x'.repeat(70_000)}`;
     const { raw } = await cli(['guard-plan'], JSON.stringify({ tool_input: { url } }));
     assert.equal(JSON.parse(raw).hookSpecificOutput.permissionDecision, 'deny');
+  });
+
+  const withId = (installId: string, env: Record<string, string>) =>
+    cli(['guard-plan'], JSON.stringify({ tool_input: { url: 'https://example.com/', installId } }), env);
+  const decisionOf = (raw: string) => (raw ? JSON.parse(raw).hookSpecificOutput.permissionDecision : 'allow');
+
+  test('lets the install ID through only while it is being shared', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const installId = (await cli(['consent', 'share'], '', env)).output.consent?.installId ?? '';
+    assert.equal(decisionOf((await withId(installId, env)).raw), 'allow');
+
+    // A refused stop-sharing keeps the ID on this machine, and in the conversation.
+    assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
+    const { raw } = await withId(installId, env);
+    assert.equal(decisionOf(raw), 'deny');
+    assert.match(JSON.parse(raw).hookSpecificOutput.permissionDecisionReason, /only while the user is sharing/);
+  });
+
+  test('refuses an install ID that is not the one stored here, or with no data folder to check', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    await cli(['consent', 'share'], '', env);
+    assert.equal(decisionOf((await withId('3b241101-e2bb-4255-8caf-4136c566a962', env)).raw), 'deny');
+    assert.equal(
+      decisionOf((await withId('3b241101-e2bb-4255-8caf-4136c566a962', { COOKIEPAL_DATA_DIR: '' })).raw),
+      'deny',
+    );
+  });
+
+  test('sending the install ID retires its erasure marker, even with no prepare before it', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const installId = (await cli(['consent', 'share'], '', env)).output.consent?.installId ?? '';
+    const path = join(env.COOKIEPAL_DATA_DIR, 'forgotten-install-ids.json');
+    writeFileSync(path, JSON.stringify({ [installId]: [0, 60_000] }));
+
+    await withId(installId, env);
+    assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
   });
 
   test('lets a bare page through, and ignores input it cannot read', async () => {

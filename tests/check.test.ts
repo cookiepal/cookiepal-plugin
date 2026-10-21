@@ -1,20 +1,11 @@
 import assert from 'node:assert/strict';
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  utimesSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import { isThirdParty } from '../src/browser.ts';
 import { categorise } from '../src/categorise.ts';
-import { decline, markForgotten, readConsent, share } from '../src/consent.ts';
+import { decline, ERASURE_GAP_MS, markForgotten, readConsent, share } from '../src/consent.ts';
 import { MAX_PAGE_TEXT, pageText } from '../src/pageText.ts';
 import { type Limits, parsePlan } from '../src/plan.ts';
 import { buildConsent, buildConsentRun, buildSubmission, type CapturedCookie } from '../src/result.ts';
@@ -383,8 +374,8 @@ describe('install ID consent', () => {
     const { installId } = share(dir);
     assert.match(installId ?? '', /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.equal(share(dir).installId, installId);
-    markForgotten(dir, installId ?? '');
-    markForgotten(dir, installId ?? '');
+    markForgotten(dir, installId ?? '', 0);
+    markForgotten(dir, installId ?? '', ERASURE_GAP_MS);
     decline(dir);
     assert.deepEqual(readConsent(dir), { asked: true, installId: null, sharing: false });
     assert.doesNotMatch(readFileSync(join(dir, 'install-id.json'), 'utf8'), new RegExp(installId ?? 'x'));
@@ -414,8 +405,8 @@ describe('install ID consent', () => {
   test('withdrawing also deletes the ID from the erasure record', () => {
     const dir = dataDir();
     const { installId } = share(dir);
-    markForgotten(dir, installId ?? '');
-    markForgotten(dir, installId ?? '');
+    markForgotten(dir, installId ?? '', 0);
+    markForgotten(dir, installId ?? '', ERASURE_GAP_MS);
 
     decline(dir);
     assert.doesNotMatch(readFileSync(join(dir, 'forgotten-install-ids.json'), 'utf8'), new RegExp(installId ?? 'x'));
@@ -423,10 +414,23 @@ describe('install ID consent', () => {
 
   test('the erasure marker is per ID, so a stale one does not open the gate', () => {
     const dir = dataDir();
-    markForgotten(dir, '3b241101-e2bb-4255-8caf-4136c566a962');
+    // Two clean erasures far enough apart: they would open the gate for that ID.
+    markForgotten(dir, '3b241101-e2bb-4255-8caf-4136c566a962', 0);
+    markForgotten(dir, '3b241101-e2bb-4255-8caf-4136c566a962', ERASURE_GAP_MS);
     share(dir);
 
     assert.equal(decline(dir), null);
+  });
+
+  test('two erasures made at the same moment prove no more than one', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+    markForgotten(dir, installId ?? '', 1_000);
+    markForgotten(dir, installId ?? '', 1_000 + ERASURE_GAP_MS - 1);
+    assert.equal(decline(dir), null);
+
+    markForgotten(dir, installId ?? '', 1_000 + ERASURE_GAP_MS);
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
   });
 
   // The server's index can lag, so a check stored just before the first run can
@@ -435,22 +439,11 @@ describe('install ID consent', () => {
     const dir = dataDir();
     const { installId } = share(dir);
 
-    markForgotten(dir, installId ?? '');
+    markForgotten(dir, installId ?? '', 0);
     assert.equal(decline(dir), null);
     assert.equal(readConsent(dir).installId, installId);
 
-    markForgotten(dir, installId ?? '');
-    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
-  });
-
-  // A marker written by the version that needed one run still counts, but only as one.
-  test('a marker list from an older version counts as one erasure', () => {
-    const dir = dataDir();
-    const { installId } = share(dir);
-    writeFileSync(join(dir, 'forgotten-install-ids.json'), `${JSON.stringify([installId])}\n`);
-
-    assert.equal(decline(dir), null);
-    markForgotten(dir, installId ?? '');
+    markForgotten(dir, installId ?? '', ERASURE_GAP_MS);
     assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
   });
 
