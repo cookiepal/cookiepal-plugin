@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
-import { getDomain } from 'tldts';
 import {
   type ConsentSkipReason,
   clickTargetExpression,
@@ -13,6 +12,7 @@ import {
 } from './banner.ts';
 import type { ButtonMatchers, ConsentPlan } from './plan.ts';
 import type { CapturedCookie } from './result.ts';
+import { site } from './url.ts';
 
 /** A failure worth showing the user as it is. */
 export class CheckError extends Error {}
@@ -140,13 +140,6 @@ const exited = (child: ChildProcess, ms: number): Promise<boolean> =>
     : withTimeout(new Promise<boolean>((resolve) => child.once('exit', () => resolve(true))), ms, 'exit').catch(
         () => false,
       );
-
-/**
- * The registrable domain from the public suffix list, private domains included,
- * so `app.cookiepal.io` and `mcp.cookiepal.io` share `cookiepal.io` while
- * `jack.github.io` and `other.github.io` stay apart. Null for an IP or `localhost`.
- */
-const site = (host: string): string | null => getDomain(host, { allowPrivateDomains: true });
 
 /**
  * A request is first-party when its host has the page's registrable domain. A

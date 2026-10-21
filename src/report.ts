@@ -1,4 +1,14 @@
-import { type Assessment, consentLine, type Finding } from './assess.ts';
+import {
+  type Assessment,
+  cleanCaveat,
+  consentLine,
+  type Finding,
+  type InventoryCookie,
+  type InventoryHost,
+  ordered,
+  SEVERITY,
+  vendorText,
+} from './assess.ts';
 
 /**
  * Renders the risk read as a self-contained page, so the check can be published
@@ -155,18 +165,6 @@ footer { border-top: 1px solid var(--rule); padding-top: 1.25rem; display: flex;
 footer strong { color: var(--ink); }
 `;
 
-/** The findings whose own heading should read as the most serious, drawn first. */
-const SEVERITY: Record<string, number> = {
-  'active-after-reject': 0,
-  'set-after-reject': 1,
-  'tracking-before-consent': 2,
-  'unidentified-cookies': 3,
-  'hosts-before-consent': 4,
-};
-
-const ordered = (findings: Finding[]) =>
-  [...findings].sort((a, b) => (SEVERITY[a.kind] ?? 9) - (SEVERITY[b.kind] ?? 9));
-
 const bars = (finding: Finding): string => {
   if (finding.groups.length === 0) return '';
   const shown = finding.groups.slice(0, TOP_GROUPS);
@@ -182,13 +180,47 @@ const bars = (finding: Finding): string => {
         '</div>',
     )
     .join('');
-  const more = rest > 0 ? `<p class="rest">+ ${rest} more, listed in full below.</p>` : '';
+  // Rows read after reject are in the finding's own tables, not the inventory below.
+  const inInventory =
+    finding.cookies.length + finding.hosts.length > finding.listed.cookies.length + finding.listed.hosts.length;
+  const listedHere = finding.listed.cookies.length + finding.listed.hosts.length > 0;
+  const where = inInventory ? (listedHere ? 'here and below' : 'below') : 'here';
+  const more = rest > 0 ? `<p class="rest">+ ${rest} more, listed in full ${where}.</p>` : '';
   return `<div class="bars">${drawn}</div>${more}`;
 };
 
+const cookieRow = (cookie: InventoryCookie): string =>
+  `<tr><td>${esc(cookie.name || '(unnamed)')}</td><td>${esc(cookie.domain)}</td>` +
+  `<td>${esc(cookie.category)}</td>` +
+  `<td${cookie.vendor ? '' : ' class="dim"'}>${esc(vendorText(cookie))}</td></tr>`;
+
+const hostRow = ({ host, domain }: InventoryHost): string =>
+  `<tr><td>${esc(host)}</td><td class="dim">${esc(domain)}</td></tr>`;
+
+const COOKIE_HEAD = '<thead><tr><th>Cookie</th><th>Domain</th><th>Category</th><th>Vendor</th></tr></thead>';
+
+const HOST_HEAD = '<thead><tr><th>Host</th><th>Domain</th></tr></thead>';
+
+/** The rows a finding read after reject, which the arrival inventory below does not hold. */
+const listedRows = ({ listed }: Finding): string => {
+  if (listed.cookies.length + listed.hosts.length === 0) return '';
+  const table = (head: string, rows: string) =>
+    `<div class="invbox"><table class="inv">${head}<tbody>${rows}</tbody></table></div>`;
+  return (
+    '<p class="eyebrow">Read after the reject button was pressed</p>' +
+    (listed.cookies.length > 0 ? table(COOKIE_HEAD, listed.cookies.map(cookieRow).join('')) : '') +
+    (listed.hosts.length > 0 ? table(HOST_HEAD, listed.hosts.map(hostRow).join('')) : '')
+  );
+};
+
+/** Only for rows that are in the inventory: those read after reject are listed with the finding instead. */
 const inventoryLink = (finding: Finding): string => {
-  if (finding.cookies.length > 0) return '<a class="jump" href="#inventory-cookies">See every cookie below &#8595;</a>';
-  if (finding.hosts.length > 0) return '<a class="jump" href="#inventory-hosts">See every host below &#8595;</a>';
+  if (finding.cookies.length > finding.listed.cookies.length) {
+    return '<a class="jump" href="#inventory-cookies">See every cookie below &#8595;</a>';
+  }
+  if (finding.hosts.length > finding.listed.hosts.length) {
+    return '<a class="jump" href="#inventory-hosts">See every host below &#8595;</a>';
+  }
   return '';
 };
 
@@ -203,11 +235,12 @@ const lawLines = (finding: Finding): string =>
     .join('');
 
 const findingBlock = (finding: Finding): string =>
-  `<article class="finding${(SEVERITY[finding.kind] ?? 9) < 2 ? ' lead' : ''}">` +
+  `<article class="finding${SEVERITY[finding.kind] < 2 ? ' lead' : ''}">` +
   `<h3>${esc(finding.title)}</h3>` +
   `<p class="detail">${esc(finding.detail)}</p>` +
   (finding.shape ? `<p class="shape">${esc(finding.shape)}</p>` : '') +
   bars(finding) +
+  listedRows(finding) +
   inventoryLink(finding) +
   lawLines(finding) +
   '</article>';
@@ -241,6 +274,7 @@ const cleanBlock = (assessment: Assessment): string =>
   `third-party host${assessment.checked.thirdPartyHosts === 1 ? '' : 's'} before any consent was given, and ` +
   'found nothing that is not strictly necessary. ' +
   consentLine(assessment) +
+  cleanCaveat(assessment) +
   `</p><p class="shape">${esc(assessment.scope)}</p>` +
   '</article>' +
   // The only place the laws are set out on their own. With findings, each law
@@ -282,16 +316,8 @@ const inventory = (assessment: Assessment): string => {
       : '<section class="section" id="inventory-cookies">' +
         '<div class="invhead"><h2>Every cookie set before consent</h2>' +
         `<span class="count">${scrollHint(cookies.length)}</span></div>` +
-        '<div class="invbox"><table class="inv"><thead><tr><th>Cookie</th><th>Domain</th>' +
-        '<th>Category</th><th>Vendor</th></tr></thead><tbody>' +
-        cookies
-          .map(
-            ({ name, domain, category, vendor }) =>
-              `<tr><td>${esc(name || '(unnamed)')}</td><td>${esc(domain)}</td>` +
-              `<td>${esc(category)}</td>` +
-              `<td${vendor ? '' : ' class="dim"'}>${vendor ? esc(vendor) : 'not recognised'}</td></tr>`,
-          )
-          .join('') +
+        `<div class="invbox"><table class="inv">${COOKIE_HEAD}<tbody>` +
+        cookies.map(cookieRow).join('') +
         `<tr class="endrow"><td colspan="4">End of ${cookies.length} cookies</td></tr>` +
         '</tbody></table></div></section>';
 
@@ -301,8 +327,8 @@ const inventory = (assessment: Assessment): string => {
       : '<section class="section" id="inventory-hosts">' +
         '<div class="invhead"><h2>Every third-party host contacted before consent</h2>' +
         `<span class="count">${scrollHint(hosts.length)}</span></div>` +
-        '<div class="invbox"><table class="inv"><thead><tr><th>Host</th><th>Domain</th></tr></thead><tbody>' +
-        hosts.map(({ host, domain }) => `<tr><td>${esc(host)}</td><td class="dim">${esc(domain)}</td></tr>`).join('') +
+        `<div class="invbox"><table class="inv">${HOST_HEAD}<tbody>` +
+        hosts.map(hostRow).join('') +
         `<tr class="endrow"><td colspan="2">End of ${hosts.length} hosts</td></tr>` +
         '</tbody></table></div></section>';
 
