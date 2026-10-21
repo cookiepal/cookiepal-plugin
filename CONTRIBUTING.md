@@ -55,10 +55,12 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 | `skills/run-scan/SKILL.md` | The skill it follows: starting a local crawl, polling it, and uploading the report it produces |
 | `commands/check-gcm.md` | The `/cookiepal:check-gcm` command |
 | `skills/check-gcm/SKILL.md` | The skill it follows: reading Google Consent Mode on this machine and reporting the server's verdict |
+| `skills/match-site-design/SKILL.md` | The skill for proposing banner colours and a position from the repo's design tokens, saved only on a yes. It has no command file: a command of the same name would hide the skill |
 | `src/` | The local check: browser control, cookie capture, banner matching, categorisation, the install-tag finder, the risk read and its rendered forms |
 | `src/scan.ts` | The detached process a local scan runs in (`dist/scan.mjs`): installs the crawl engine, runs it, and categorises what it finds |
 | `src/engine.ts` | Installs `@cookiepal-oss/cli`'s crawl engine into the plugin's own data folder on first use |
 | `src/gcm.ts` | Reads and validates a Google Consent Mode reading from the page |
+| `src/design.ts` | Reads colours as CSS writes them and checks each pair the banner draws against WCAG AA, for `CHECK design` |
 | `src/scanGuard.ts` | The decision behind the `upload_scan_report` guard |
 | `src/laws.ts` | The curated legal wording |
 | `hooks/hooks.json` | Hooks that keep query strings off `plan_check`, keep the install ID off `connect_account` without a recorded answer to linking it (and ask Claude Code to confirm a yes with the user, which bypass-permissions mode skips), ask the user before `set_banner_mode`, `customise_banner` or `regenerate_banner` changes the live banner, hand each plan, result, install tag and `start_scan` answer to the local check, spawn the crawl a `start_scan` answer describes, and refuse a `verify_installation`, `upload_scan_report` or `check_gcm_status` call whose evidence no local run produced |
