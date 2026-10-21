@@ -36,6 +36,7 @@ interface Output {
   installId?: string | null;
   consent?: { asked: boolean; installId: string | null; sharing?: boolean };
   link?: { installId: string; linkInstall: boolean };
+  colors?: Record<string, string>;
   submit: {
     cookies: { name: string; category: string }[];
     thirdPartyHosts: string[];
@@ -704,6 +705,22 @@ describe('prepare', () => {
     );
     assert.equal(output.page, `http://localhost:${port}/markers`);
     assert.deepEqual(output.removedCrawlMarkers, ['crawl', 'cookiepal-crawl']);
+  });
+});
+
+describe('design through the CLI', () => {
+  test('reads the colours from stdin and returns all four, checked', async () => {
+    const { output, code } = await cli(['design'], '{"accent": "#ef8600"}');
+    assert.equal(code, 0);
+    assert.equal(output.ok, true);
+    assert.deepEqual(Object.keys(output.colors ?? {}).sort(), ['accent', 'background', 'main', 'secondary']);
+    assert.equal(output.colors?.accent, '#b16300');
+  });
+
+  test('refuses input that is not JSON', async () => {
+    const { output, code } = await cli(['design'], 'not json');
+    assert.equal(code, 1);
+    assert.match(output.error ?? '', /Expected a JSON object of colours/);
   });
 });
 
