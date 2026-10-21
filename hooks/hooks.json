@@ -1,0 +1,29 @@
+{
+  "description": "Keeps query strings off plan_check, and hands each plan_check result to the local check so the plan never passes through the shell.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__plugin_cookiepal_cookiepal__plan_check",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-plan",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__plugin_cookiepal_cookiepal__plan_check",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" save-plan",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

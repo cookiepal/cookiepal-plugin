@@ -26,7 +26,29 @@ Restart Claude Code after installing. Run `/mcp` and you should see the `cookiep
 /cookiepal:check https://example.com
 ```
 
-The check loads one page in a fresh, temporary browser profile on your machine and reports what was set before you gave consent. It is an advisory check of a single page, labelled with the country it ran from. It is not a full site scan and it does not change anything in a CookiePal account.
+The check loads one page in a fresh, temporary browser profile on your machine and reports what was set before you gave consent. It is an advisory check of a single page, labelled with the country it ran from. It is not a full site scan and it does not change anything in a CookiePal account. It works on any page your machine can reach, including `localhost`.
+
+You need [Node.js](https://nodejs.org) 18 or later and Google Chrome, Microsoft Edge, Brave or Chromium. The check never uses your own browser profile, so your cookies and sign-ins are never read. To use a browser installed somewhere unusual, set `COOKIEPAL_BROWSER` to its executable.
+
+### What is sent to CookiePal
+
+Only what it takes to count checks and store the result:
+
+- the page's origin and path, without its query string or fragment, which stay on your machine;
+- each cookie's name, domain, path, expiry, flags and category, never its value;
+- the third-party hosts the page contacted;
+- the plugin's version number;
+- a random install ID, only if you agreed to share it.
+
+The page is loaded on your machine, never by CookiePal. Each cookie is categorised on your machine with the open-source [`@cookiepal-oss/cookie-db`](https://www.npmjs.com/package/@cookiepal-oss/cookie-db) catalogue.
+
+### Install ID
+
+The first check asks once whether to share a random install ID, which lets CookiePal count unique installs. The default is no, and the check runs either way. The ID is created only after a yes. It is kept in the plugin's data folder and deleted when you uninstall. To stop sharing it and delete it:
+
+```
+/cookiepal:check stop-sharing
+```
 
 ## Update
 
@@ -52,7 +74,9 @@ Restart Claude Code to apply the update.
 
 ## What is in this repository
 
-This repository contains only the plugin itself: the manifest, the skill and the command. The checks are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
+The plugin itself: the manifests, the `/cookiepal:check` command, the `check-one-page` skill, the local check in `src/`, and a hook that hands each `plan_check` result to that check. Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its one dependency, `@cookiepal-oss/cookie-db`. Rebuild it with `pnpm build`. CI fails when it is out of date.
+
+`plan_check` and `submit_check` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
 
 ## License
 

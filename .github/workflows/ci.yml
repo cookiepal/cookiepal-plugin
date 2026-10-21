@@ -25,8 +25,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Lint
         run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      # Plugins install from git with no build step, so the bundle the skill runs is committed.
+      - name: Check dist/ matches src/
+        run: |
+          pnpm build
+          # status, not diff: an uncommitted or deleted bundle has to fail too.
+          test -z "$(git status --porcelain -- dist/)" || { git status --short -- dist/; echo "::error::dist/ is out of date or not committed. Run pnpm build and commit it."; exit 1; }
       - name: Validate plugin and marketplace manifests
         run: pnpm validate
+      # Ubuntu 24.04 blocks the unprivileged user namespaces Chrome's sandbox uses; allow them rather than
+      # testing with --no-sandbox, which users never run.
+      - name: Let Chrome use its sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      # The browser tests use the runner's preinstalled Google Chrome, as a user's machine would.
       - name: Test
         run: pnpm test
 
