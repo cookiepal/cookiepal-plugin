@@ -8915,7 +8915,7 @@ var NOT_A_FINDING = {
 };
 var UNKNOWN_CAVEAT = "Not recognising a cookie is a limit of the open-source catalogue, not evidence that the cookie tracks anyone. Some of these will be a site\u2019s own and entirely ordinary. The finding is that nobody reading this check can tell which, and the site is the only party that can say.";
 var SCOPE = "This was one page, loaded once, from one country, at one moment. It does not show what the rest of the site does, what a visitor from somewhere else would get, or what happens to the data afterwards.";
-var FLAG_KEY = (strong) => `Everything marked ${strong("flagged")} is explained below. ${strong("Not flagged")} means that law does not treat it as a problem, and the reason is given with the finding. Neither is a verdict on the page.`;
+var FLAG_KEY = (strong) => `Everything marked ${strong("flagged")} is explained below. ${strong("Not flagged")} means that law does not treat it as a problem on its own, and the reason is given with the finding. Neither is a verdict on the page.`;
 var NO_VERDICT = "This is not a compliance verdict and not legal advice. It reports what the check found on this page and what each law asks for, so that someone can look at the two together.";
 
 // src/url.ts
