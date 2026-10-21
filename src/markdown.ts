@@ -1,4 +1,13 @@
-import { type Assessment, consentLine, type Finding } from './assess.ts';
+import {
+  type Assessment,
+  cleanCaveat,
+  consentLine,
+  type Finding,
+  type InventoryCookie,
+  type InventoryHost,
+  ordered,
+  vendorText,
+} from './assess.ts';
 
 /**
  * The risk read as text (CPL-396), in two shapes that share everything but
@@ -23,26 +32,22 @@ import { type Assessment, consentLine, type Finding } from './assess.ts';
  * The `.md` file is the same read as a document rather than as output: it adds
  * the law-by-finding grid and the full inventory, because a file is kept and
  * reread, and nothing in it has to be asked for a second time. It is the same
- * content as the page, not the same appearance \u2014 Markdown carries no styling,
+ * content as the page, not the same appearance — Markdown carries no styling,
  * so the branding and the layout are the page's alone.
  */
 
 /** Groups shown per finding. The page draws eight; a line is dearer in a terminal. */
 const TOP_GROUPS = { terminal: 5, document: 8 };
 
-const SEVERITY: Record<string, number> = {
-  'active-after-reject': 0,
-  'set-after-reject': 1,
-  'tracking-before-consent': 2,
-  'unidentified-cookies': 3,
-  'hosts-before-consent': 4,
-};
+/**
+ * A name read off the page, made inert: every character Markdown gives a meaning
+ * is escaped, the backslash first so an escape cannot be undone by one already in
+ * the name. A pipe would otherwise break the table it sits in, and brackets would
+ * make a live link out of text the page chose.
+ */
+const inert = (value: string) => value.replace(/[\\`*_[\]()<>|~#!]/g, '\\$&');
 
-const ordered = (findings: Finding[]) =>
-  [...findings].sort((a, b) => (SEVERITY[a.kind] ?? 9) - (SEVERITY[b.kind] ?? 9));
-
-/** A cookie name or host can hold a pipe, which would break the table it sits in. */
-const cell = (value: string) => value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+const cell = (value: string) => inert(value).replace(/\r?\n/g, ' ');
 
 const groupTable = (finding: Finding, top: number): string[] => {
   if (finding.groups.length === 0) return [];
@@ -53,6 +58,37 @@ const groupTable = (finding: Finding, top: number): string[] => {
   const rows = shown.map(({ label, count }) => `| ${cell(label)} | ${count} |`);
   if (rest.length > 0) rows.push(`| _+ ${rest.length} more_ | ${restCount} |`);
   return ['', `| ${of} | ${unit} |`, '| --- | ---: |', ...rows];
+};
+
+const cookieTable = (cookies: InventoryCookie[]): string[] => [
+  '| Cookie | Domain | Category | Vendor |',
+  '| --- | --- | --- | --- |',
+  ...cookies.map(
+    (cookie) =>
+      `| ${cell(cookie.name || '(unnamed)')} | ${cell(cookie.domain)} | ${cookie.category} | ` +
+      `${cookie.vendor ? cell(cookie.vendor) : `_${vendorText(cookie)}_`} |`,
+  ),
+];
+
+const hostTable = (hosts: InventoryHost[]): string[] => [
+  '| Host | Domain |',
+  '| --- | --- |',
+  ...hosts.map(({ host, domain }) => `| ${cell(host)} | ${cell(domain)} |`),
+];
+
+/**
+ * The rows a finding read after reject. Printed in the terminal too, unlike the
+ * inventory: the inventory is the arrival reading and does not hold them, so
+ * nothing else would ever name them.
+ */
+const listedRows = ({ listed }: Finding): string[] => {
+  if (listed.cookies.length + listed.hosts.length === 0) return [];
+  return [
+    '',
+    '_Read after the reject button was pressed:_',
+    ...(listed.cookies.length > 0 ? ['', ...cookieTable(listed.cookies)] : []),
+    ...(listed.hosts.length > 0 ? ['', ...hostTable(listed.hosts)] : []),
+  ];
 };
 
 /**
@@ -73,6 +109,7 @@ const findingBlock = (finding: Finding, index: number, top: number): string[] =>
     finding.detail,
     ...(finding.shape ? ['', `_${finding.shape}_`] : []),
     ...groupTable(finding, top),
+    ...listedRows(finding),
     '',
     ...lawLines(finding),
   ];
@@ -82,7 +119,7 @@ const header = (assessment: Assessment): string[] => {
   const { checked, country } = assessment;
   const where = country ? `from ${country}` : 'from an unknown country';
   return [
-    `## CookiePal check: ${assessment.page}`,
+    `## CookiePal check: ${inert(assessment.page)}`,
     '',
     `One page, loaded once in a fresh browser on this machine ${where}. Not a full site scan, and nothing in any CookiePal account changed.`,
     '',
@@ -129,7 +166,7 @@ const build = (assessment: Assessment, complete: boolean): string => {
       '',
       '### Nothing was flagged',
       '',
-      `Nothing that is not strictly necessary was set, and no third party was contacted, before any consent was given. ${consentLine(assessment)}`,
+      `Nothing that is not strictly necessary was set, and no third party was contacted, before any consent was given. ${consentLine(assessment)}${cleanCaveat(assessment)}`,
       '',
       'What each law asks for, all the same:',
       '',
@@ -155,14 +192,18 @@ const build = (assessment: Assessment, complete: boolean): string => {
     else {
       lines.push(
         '',
-        `_Ask for the full inventory to list all ${cookies.length} ${cookies.length === 1 ? 'cookie' : 'cookies'} ` +
-          `and all ${hosts.length} ${hosts.length === 1 ? 'host' : 'hosts'}._`,
+        `_Ask for the full inventory to list ${[countOf(cookies.length, 'cookie'), countOf(hosts.length, 'host')]
+          .filter(Boolean)
+          .join(' and ')}._`,
       );
     }
   }
 
   return [...lines, ...footer(assessment)].join('\n');
 };
+
+/** "the 1 cookie", "all 3 cookies", or nothing for none, so the offer never lists an empty list. */
+const countOf = (n: number, one: string) => (n === 0 ? '' : n === 1 ? `the 1 ${one}` : `all ${n} ${one}s`);
 
 /** What is printed in the terminal: the read, trimmed to a terminal. */
 export const renderTerminal = (assessment: Assessment): string => build(assessment, false);
@@ -176,27 +217,12 @@ export const renderInventory = (assessment: Assessment): string => {
   const lines: string[] = [];
 
   if (cookies.length > 0) {
-    lines.push(
-      `### Every cookie set before consent (${cookies.length})`,
-      '',
-      '| Cookie | Domain | Category | Vendor |',
-      '| --- | --- | --- | --- |',
-      ...cookies.map(
-        ({ name, domain, category, vendor }) =>
-          `| ${cell(name || '(unnamed)')} | ${cell(domain)} | ${category} | ${vendor ? cell(vendor) : '_not recognised_'} |`,
-      ),
-    );
+    lines.push(`### Every cookie set before consent (${cookies.length})`, '', ...cookieTable(cookies));
   }
 
   if (hosts.length > 0) {
     if (lines.length > 0) lines.push('');
-    lines.push(
-      `### Every third-party host contacted before consent (${hosts.length})`,
-      '',
-      '| Host | Domain |',
-      '| --- | --- |',
-      ...hosts.map(({ host, domain }) => `| ${cell(host)} | ${cell(domain)} |`),
-    );
+    lines.push(`### Every third-party host contacted before consent (${hosts.length})`, '', ...hostTable(hosts));
   }
 
   return lines.join('\n');

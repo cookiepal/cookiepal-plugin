@@ -65,10 +65,11 @@ describe('repository contents', () => {
   const files = listFiles('.').map((path) => ({ path, text: readFileSync(join(root, path), 'utf8') }));
 
   const PUBLIC_HOSTS = new Set(['cookiepal.io', 'www.cookiepal.io', 'mcp.cookiepal.io']);
-  // The company is named once, in the README's legal footer. Its public site is allowed;
-  // any other westpoint host would be an internal one and still fails.
-  const PUBLIC_COMPANY_HOSTS = new Set(['westpoint.io', 'www.westpoint.io']);
-  const FORBIDDEN = [/staging/i, /execute-api/i, /amazonaws\.com/i];
+  const FORBIDDEN = [/staging/i, /execute-api/i, /amazonaws\.com/i, /westpoint/i];
+  // The company is named in exactly two ways: the repository it is published from,
+  // and the README's legal footer. Anything else naming it, an internal host, a
+  // person's address or a ticket tracker, still fails.
+  const PUBLIC_COMPANY_NAMES = [new RegExp(REPO, 'g'), /\[Westpoint\]\(https:\/\/westpoint\.io\)/g];
 
   test('the only CookiePal hosts named are the public ones', () => {
     for (const { path, text } of files) {
@@ -76,9 +77,6 @@ describe('repository contents', () => {
         const lower = host.toLowerCase();
         if (lower === 'cookiepal.io' || lower.endsWith('.cookiepal.io')) {
           assert.ok(PUBLIC_HOSTS.has(lower), `${path} names a non-public host: ${host}`);
-        }
-        if (lower === 'westpoint.io' || lower.endsWith('.westpoint.io')) {
-          assert.ok(PUBLIC_COMPANY_HOSTS.has(lower), `${path} names a non-public host: ${host}`);
         }
       }
     }
@@ -90,7 +88,8 @@ describe('repository contents', () => {
     assert.ok(entries.length > 0, 'hooks.json registers no hooks');
 
     for (const { matcher } of entries) {
-      const tool = matcher.match(/__([a-z_]+)$/)?.[1];
+      const tool = matcher.match(/__([a-z_]+)\$$/)?.[1];
+      assert.ok(matcher.startsWith('^') && matcher.endsWith('$'), `${matcher} must be anchored`);
       assert.ok(tool, `matcher names no tool: ${matcher}`);
       const pattern = new RegExp(matcher);
 
@@ -98,8 +97,9 @@ describe('repository contents', () => {
       for (const name of [`mcp__plugin_cookiepal_cookiepal__${tool}`, `mcp__cookiepal__${tool}`]) {
         assert.match(name, pattern, `${matcher} does not match ${name}`);
       }
-      // It must not reach another server's identically named tool.
+      // It must not reach another server's identically named tool, or a longer tool name.
       assert.doesNotMatch(`mcp__other__${tool}`, pattern, `${matcher} over-matches mcp__other__${tool}`);
+      assert.doesNotMatch(`mcp__cookiepal__${tool}_status`, pattern, `${matcher} over-matches a longer name`);
     }
   });
 
@@ -110,7 +110,10 @@ describe('repository contents', () => {
 
   test('no internal hostnames or AWS endpoints', () => {
     for (const { path, text } of files) {
-      const withoutSuffixList = text.replace(PUBLIC_SUFFIX_LIST, '');
+      const withoutSuffixList = PUBLIC_COMPANY_NAMES.reduce(
+        (rest, allowed) => rest.replace(allowed, ''),
+        text.replace(PUBLIC_SUFFIX_LIST, ''),
+      );
       for (const pattern of FORBIDDEN) {
         assert.doesNotMatch(withoutSuffixList, pattern, `${path} matches ${pattern}`);
       }

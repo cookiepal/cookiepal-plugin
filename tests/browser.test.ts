@@ -120,6 +120,38 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
        <div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`,
     ),
   }),
+  // A "Learn more" button inside the banner text: the climb goes past it to the box with the real buttons.
+  '/keyword-learn-more': () => ({
+    body: banner(
+      'keyword-learn-more',
+      `<div><p>We use cookies. <button type="button">Learn more</button></p>${TEXT_BUTTONS}</div>`,
+    ),
+  }),
+  // The keyword split across elements, so no one text node holds the whole phrase.
+  '/keyword-split': () => ({
+    body: banner('keyword-split', `<div><p>We use <b>cookies</b> here.</p>${TEXT_BUTTONS}</div>`),
+  }),
+  // No banner: the keyword is in a long page's hero, and an unrelated "Reject all" is further down.
+  '/keyword-hero': () => ({
+    body: banner(
+      'keyword-hero',
+      `<main>
+         <section><h1>Fresh bread</h1><p>We use cookies to remember your basket.</p></section>
+         <div style="height:3000px"></div>
+         <form><p>Pending invitations</p><button type="button" onclick="reject()">Reject all</button></form>
+       </main>`,
+    ),
+  }),
+  // A fixed bar holding the keyword and only a "Learn more": the climb stops at the bar, not at the "Reject all" past it.
+  '/keyword-fixed': () => ({
+    body: banner(
+      'keyword-fixed',
+      `<div>
+         <div style="position:fixed;bottom:0"><p>We use cookies.</p><button type="button">Learn more</button></div>
+         <button type="button" onclick="reject()">Reject all</button>
+       </div>`,
+    ),
+  }),
   // Reject clears one cookie but keeps tracking anyway: the finding the check exists for.
   '/leaky-reject': () => ({
     body: banner(
@@ -746,6 +778,58 @@ describe('the plan_check hook', () => {
   });
 });
 
+describe('the submit_check hook and the risk read', () => {
+  const CHECK_ID = '0192f3a4-1b2c-7d3e-8f40-123456789abc';
+
+  /** A PostToolUse payload as large as a busy page makes it: every cookie and host, sent and returned. */
+  const busyPayload = (count: number) => {
+    const cookies = Array.from({ length: count }, (_, i) => ({
+      name: `_tracker_${i}_${'x'.repeat(40)}`,
+      domain: `.cdn-${i}.example-advertising-network.com`,
+      path: '/',
+      expires: 1_800_000_000,
+      httpOnly: false,
+      secure: true,
+      category: 'other',
+    }));
+    const hosts = Array.from({ length: count }, (_, i) => `pixel-${i}.example-advertising-network.com`);
+    const submit = { checkId: CHECK_ID, cookies, thirdPartyHosts: hosts, truncated: false };
+    const response = { ...submit, page: 'https://example.com/', country: 'Brazil', summary: {} };
+    return JSON.stringify({
+      tool_name: 'mcp__plugin_cookiepal_cookiepal__submit_check',
+      tool_input: submit,
+      tool_response: { structuredContent: response, content: [{ type: 'text', text: JSON.stringify(response) }] },
+    });
+  };
+
+  test('a result far larger than a URL is still stored, so the read runs on a busy page', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const payload = busyPayload(400);
+    assert.ok(payload.length > 256 * 1024, `the payload is ${payload.length} bytes`);
+    const hook = await cli(['save-result'], payload, env);
+    assert.equal(hook.raw, '');
+    assert.equal(hook.code, 0);
+
+    const { output } = await cli(['assess', CHECK_ID], '', env);
+    assert.equal(output.ok, true, output.error);
+  });
+
+  test('the read carries its own notice that the names in it came from the page', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    await cli(['save-result'], busyPayload(1), env);
+    const { output } = await cli(['assess', CHECK_ID], '', env);
+    const { notice } = output as unknown as { notice?: string };
+    assert.match(notice ?? '', /read from the checked page/);
+    for (const field of ['text', 'inventoryText', 'assessment', 'files']) assert.ok(notice?.includes(field), field);
+  });
+
+  test('a malformed check ID is told apart from a result that has gone', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    assert.match((await cli(['assess', 'not-a-check'], '', env)).output.error ?? '', /not a check ID/);
+    assert.match((await cli(['assess', CHECK_ID], '', env)).output.error ?? '', /last 30 minutes/);
+  });
+});
+
 describe('the plan_check guard', () => {
   const guard = (url: string) =>
     cli(['guard-plan'], JSON.stringify({ hook_event_name: 'PreToolUse', tool_input: { url } }));
@@ -864,6 +948,42 @@ describe('the consent action', () => {
     assert.equal(reject?.pressed, true);
     assert.equal(reject?.matchedBy, 'text');
     assert.deepEqual(reject?.cookiesAfterClick, []);
+  });
+
+  // Only the banner text as a keyword, so the "Accept all" label cannot locate the banner by itself.
+  const BANNER_TEXT_ONLY = { ...MATCHERS, banner: { ...MATCHERS.banner, keywords: ['we use cookies'] } };
+
+  test('a "Learn more" button inside the banner text does not stop the search for the real buttons', async () => {
+    const { output } = await withConsent('/keyword-learn-more', BANNER_TEXT_ONLY);
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, true);
+    assert.equal(consent?.reject.pressed, true);
+  });
+
+  test('a keyword split across elements still locates the banner', async () => {
+    const { output } = await withConsent('/keyword-split', BANNER_TEXT_ONLY);
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, true);
+    assert.equal(consent?.reject.pressed, true);
+  });
+
+  test('keyword text in a hero does not reach an unrelated button further down the page', async () => {
+    const { output } = await withConsent('/keyword-hero');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.bannerFound, true);
+    assert.equal(consent?.reject.pressed, false);
+    assert.equal(consent?.reject.reason, 'no-button');
+  });
+
+  test('the search from a keyword stops at a fixed box', async () => {
+    const { output } = await withConsent('/keyword-fixed');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.reject.pressed, false);
+    assert.equal(consent?.reject.reason, 'no-button');
   });
 
   test('AC3: tracking that keeps going after reject is reported as set after the reject', async () => {

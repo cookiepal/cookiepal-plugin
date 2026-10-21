@@ -2,7 +2,10 @@
 export const PLAN_VERSION = 1;
 export const RESULT_VERSION = 2;
 
-export const UPDATE_HINT = 'Update the plugin with /plugin marketplace update cookiepal, then restart Claude Code.';
+/** The same commands the README gives: updating the marketplace alone does not update the plugin. */
+export const UPDATE_HINT =
+  'Update the plugin by running `claude plugin marketplace update cookiepal` and then ' +
+  '`claude plugin update cookiepal@cookiepal` in a terminal, then run /reload-plugins in Claude Code.';
 
 export interface Limits {
   maxCookies: number;

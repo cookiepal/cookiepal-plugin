@@ -32,7 +32,7 @@ CI runs lint, typecheck, the `dist/` freshness check, manifest validation, the t
 
 ## `dist/` is committed, on purpose
 
-Claude Code installs plugins straight from git with no build step, so the bundle the skill actually runs has to be in the repository. `dist/check.mjs` is generated from `src/` and its one dependency.
+Claude Code installs plugins straight from git with no build step, so the bundle the skill actually runs has to be in the repository. `dist/check.mjs` is generated from `src/` and its dependencies.
 
 **Run `pnpm build` and commit `dist/` with any change to `src/`.** CI fails when the committed bundle does not match the source, including when it has been deleted or left uncommitted. Never hand-edit `dist/`.
 
@@ -56,7 +56,7 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 
 **The check never judges compliance.** It reports what was found and what each law asks for. "This site is compliant" is not something it can say, and that rule is written into the skill as well as the output.
 
-**Nothing new should leave the user's machine** without a very good reason. The page's origin and path, the cookies without their values, the third-party hosts, the plugin version, the country and an optional install ID. That is the whole list, and it is documented in the [privacy notice](https://cookiepal.io/plugin-privacy). Adding a field means updating that notice in the same change.
+**Nothing new should leave the user's machine** without a very good reason. The page's origin and path, the cookies without their values, the third-party hosts, what the accept and reject presses did (whether each was pressed and how, and the same cookie and host details read after each), whether the result was cut short by its size limits and which result format it uses, the plugin version, the country and an optional install ID. That is the whole list, and it is documented in the [privacy notice](https://cookiepal.io/plugin-privacy). Adding a field means updating that notice in the same change.
 
 **Keep the product name "CookiePal".** "Works with Claude Code" is a compatibility statement; it is never part of the name.
 
