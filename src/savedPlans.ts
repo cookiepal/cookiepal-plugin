@@ -364,7 +364,7 @@ const isScanId = (value: unknown): value is string => typeof value === 'string' 
  * never loopback, link-local or private-range hosts, since the hook crawls it
  * with no step in between where the user could see it.
  */
-const isCrawlableUrl = (value: string): boolean => {
+export const isCrawlableUrl = (value: string): boolean => {
   let url: URL;
   try {
     url = new URL(value);

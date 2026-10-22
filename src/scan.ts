@@ -18,6 +18,7 @@ import { CheckError, findBrowser } from './browser.ts';
 import { engineEntry, ensureEngine } from './engine.ts';
 import { readScan, saveScanProgress } from './savedPlans.ts';
 import { type EngineCookie, reportCookies } from './scanReport.ts';
+import { resolveStart } from './scanStart.ts';
 
 /** Matches the published CLI's own defaults (`cookiepal crawl`'s `--max-depth`/`--concurrency`). */
 const MAX_DEPTH = 3;
@@ -65,9 +66,10 @@ const run = async (): Promise<void> => {
     const { crawl } = (await import(engineUrl)) as EngineModule;
     saveScanProgress(dataDir, scanId, { status: 'running', pagesVisited: 0 });
 
+    const start = await resolveStart(scan.url);
     let pagesVisited = 0;
     const result = await crawl({
-      url: scan.url,
+      url: start,
       maxPages: scan.maxPages,
       maxDepth: MAX_DEPTH,
       concurrency: CONCURRENCY,
@@ -84,7 +86,7 @@ const run = async (): Promise<void> => {
     if (result.startBlockedByRobots) {
       saveScanProgress(dataDir, scanId, {
         status: 'blocked',
-        blockedUrl: result.robotsBlocked[0] ?? scan.url,
+        blockedUrl: result.robotsBlocked[0] ?? start,
       });
       return;
     }
