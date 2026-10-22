@@ -45,47 +45,52 @@ export const share = (dataDir: string): ConsentState =>
   save(dataDir, { asked: true, installId: readConsent(dataDir).installId ?? randomUUID(), sharing: true });
 
 /**
- * How many clean `forget_install` runs it takes before the ID may be deleted.
- * The server finds checks through an index that is eventually consistent, so a
- * check stored seconds before stop-sharing can be missing from the first run,
- * which then truthfully reports nothing remaining. The second run comes a turn
- * later, after the index has caught up, and deletes it. One run is not enough
- * because deleting the ID is what would strand that check for good.
+ * How far apart two clean `forget_install` runs must be before the ID may be
+ * deleted. The server finds checks through an index that is eventually
+ * consistent, so a check stored seconds before stop-sharing can be missing from
+ * the first run, which then truthfully reports nothing remaining. A second run
+ * deletes it, but only once the index has caught up: two runs made at the same
+ * moment prove no more than one. Deleting the ID is what would strand that
+ * check for good, so the gap is enforced here rather than asked of the skill.
  */
-const ERASURES_NEEDED = 2;
+export const ERASURE_GAP_MS = 5_000;
 
-/** Clean erasures per install ID. A list from an older version counts each ID as one. */
-const readForgotten = (dataDir: string): Record<string, number> => {
+/** When each clean erasure of each install ID was recorded, oldest first. */
+const readForgotten = (dataDir: string): Record<string, number[]> => {
   try {
     const saved: unknown = JSON.parse(readFileSync(join(dataDir, FORGOTTEN), 'utf8'));
-    if (Array.isArray(saved)) {
-      return Object.fromEntries(saved.filter((id): id is string => typeof id === 'string').map((id) => [id, 1]));
-    }
-    if (!saved || typeof saved !== 'object') return {};
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
     return Object.fromEntries(
-      Object.entries(saved).filter((entry): entry is [string, number] => Number.isInteger(entry[1])),
+      Object.entries(saved).filter(
+        (entry): entry is [string, number[]] =>
+          Array.isArray(entry[1]) && entry[1].every((time) => Number.isFinite(time)),
+      ),
     );
   } catch {
     return {};
   }
 };
 
-const writeForgotten = (dataDir: string, forgotten: Record<string, number>): void => {
+/** Two clean erasures, the later at least `ERASURE_GAP_MS` after the first. */
+const erasedTwice = (times: number[] = []) =>
+  times.length >= 2 && Math.max(...times) - Math.min(...times) >= ERASURE_GAP_MS;
+
+const writeForgotten = (dataDir: string, forgotten: Record<string, number[]>): void => {
   mkdirSync(dataDir, { recursive: true });
   writeFileSync(join(dataDir, FORGOTTEN), `${JSON.stringify(forgotten)}\n`, { mode: 0o600 });
 };
 
 /**
  * Records that CookiePal erased the checks stored under this ID, written by the
- * PostToolUse hook on `forget_install` and read by `decline`, which needs
- * `ERASURES_NEEDED` of them. Kept on this machine only, and it holds an ID the
+ * PostToolUse hook on `forget_install` and read by `decline`, which needs two
+ * of them `ERASURE_GAP_MS` apart. Kept on this machine only, and it holds an ID the
  * machine already has: the point is that deleting the ID locally stops being
  * possible until the erasure has happened.
  */
-export const markForgotten = (dataDir: string, installId: string): boolean => {
+export const markForgotten = (dataDir: string, installId: string, now = Date.now()): boolean => {
   if (!INSTALL_ID.test(installId)) return false;
   const forgotten = readForgotten(dataDir);
-  forgotten[installId] = (forgotten[installId] ?? 0) + 1;
+  forgotten[installId] = [...(forgotten[installId] ?? []), now];
   writeForgotten(dataDir, forgotten);
   return true;
 };
@@ -109,19 +114,20 @@ export const clearForgotten = (dataDir: string, installId: string): void => {
  *
  * Deleting the ID is the one irreversible step here -- it is the only thing that
  * can find the checks stored under it -- so that part refuses while an ID is
- * still stored whose checks have not been erased twice (see `ERASURES_NEEDED`),
+ * still stored whose checks have not been erased twice (see `ERASURE_GAP_MS`),
  * returning null. That is a real gate rather than a rule written in the skill,
  * in the way `guard-plan` is for query strings: the order holds even when the
  * steps are not followed. Refused or not, the ID is never sent again: a
  * withdrawal takes effect now, and the ID is kept only to finish the erasure.
  *
- * `force` is the deliberate way past it, for a user who wants to stop sending
- * the ID when the erasure cannot be run at all. Their checks then expire on the
- * server's own clock, which is what happens without this feature anyway.
+ * `force` is the deliberate way past it, for a user who wants the ID gone from
+ * this machine even though the erasure cannot be run. Sending has already
+ * stopped by then, so all it changes is that the stored checks become
+ * unreachable: they expire on the server's own clock instead.
  */
 export const decline = (dataDir: string, { force = false } = {}): ConsentState | null => {
   const { installId } = readConsent(dataDir);
-  if (installId && !force && (readForgotten(dataDir)[installId] ?? 0) < ERASURES_NEEDED) {
+  if (installId && !force && !erasedTwice(readForgotten(dataDir)[installId])) {
     save(dataDir, { asked: true, installId, sharing: false });
     return null;
   }
