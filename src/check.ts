@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { assess } from './assess.ts';
+import { bannerAskReason } from './bannerGuard.ts';
 import { CheckError, type ConsentRequest, findBrowser, isThirdParty, loadPage, type PageLoad } from './browser.ts';
 import { categorise } from './categorise.ts';
 import {
@@ -70,6 +71,7 @@ import { prepareUrl } from './url.ts';
  *   guard-upload stdin: hook JSON → the PreToolUse hook on upload_scan_report refuses a report scan status never produced
  *   gcm stdin: the URL            → loads the page and returns the exact check_gcm_status reading
  *   guard-gcm stdin: hook JSON    → the PreToolUse hook on check_gcm_status refuses a reading no local run produced
+ *   guard-banner stdin: hook JSON → the PreToolUse hook on the banner tools asks the user before a change goes live
  *
  * The URL comes on stdin, so it never passes through shell quoting. Nothing from
  * the page or the server is ever put in a command: `ref` is a UUID this script
@@ -748,7 +750,7 @@ const main = async (): Promise<Output> => {
           'Usage: check.mjs prepare | consent share|decline [--anyway]|status|link yes|no | run <ref> | ' +
           'verify <ref> | assess <checkId> [inventory] | output artifact|html|markdown|terminal | ' +
           'scan status <scanId> | gcm | save-plan | save-result | save-snippet | save-scan | ' +
-          'save-forgotten | guard-plan | guard-connect | guard-verify | guard-upload | guard-gcm',
+          'save-forgotten | guard-plan | guard-connect | guard-verify | guard-upload | guard-gcm | guard-banner',
       };
   }
 };
@@ -849,6 +851,20 @@ const guardGcm = async () => {
   if (gcmDecision(dataDir, input) === 'deny') deny(GCM_GUARD_REASON);
 };
 
+/** Asked when the hook input cannot be read, so a change to the live banner is never let through unasked. */
+const BANNER_ASK_FALLBACK =
+  'This changes the live banner on one of your CookiePal domains. Allow only if you asked for this change.';
+
+/** The PreToolUse hook on the banner tools. Always asks; a payload it cannot read still gets the question. */
+const guardBanner = async () => {
+  let reason: string | null = null;
+  try {
+    const payload = JSON.parse(await readStdin());
+    reason = bannerAskReason(payload?.tool_name, payload?.tool_input);
+  } catch {}
+  decide('ask', reason ?? BANNER_ASK_FALLBACK);
+};
+
 const guardUpload = async () => {
   let input: unknown;
   try {
@@ -910,6 +926,8 @@ if (process.argv[2] === 'save-plan') {
   guardUpload();
 } else if (process.argv[2] === 'guard-gcm') {
   guardGcm();
+} else if (process.argv[2] === 'guard-banner') {
+  guardBanner();
 } else {
   main()
     .catch(
