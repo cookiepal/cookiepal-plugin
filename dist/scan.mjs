@@ -822,8 +822,12 @@ import { pathToFileURL } from "node:url";
 
 // src/browser.ts
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
-var import_tldts = __toESM(require_cjs(), 1);
 import { delimiter, join } from "node:path";
+
+// src/url.ts
+var import_tldts = __toESM(require_cjs(), 1);
+
+// src/browser.ts
 var CheckError = class extends Error {
 };
 var MAC_APPS = [
@@ -913,6 +917,7 @@ var SCANS = "scans";
 var SCAN_PROGRESS = "scan-progress";
 var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 var MAX_AGE_MS = 30 * 60 * 1e3;
+var PRIVATE_DIR = { recursive: true, mode: 448 };
 var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var isExpired = (path) => Date.now() - statSync(path).mtimeMs > MAX_AGE_MS;
 var liveFiles = (dir) => {
@@ -926,7 +931,7 @@ var liveFiles = (dir) => {
   for (const name of names) {
     const path = join3(dir, name);
     try {
-      if (isExpired(path)) rmSync2(path, { recursive: true, force: true });
+      if (isExpired(path)) rmSync2(path, { force: true });
       else live.push({ path, mtime: statSync(path).mtimeMs });
     } catch {
     }
@@ -934,7 +939,7 @@ var liveFiles = (dir) => {
   return live.sort((a, b) => b.mtime - a.mtime).map(({ path }) => path);
 };
 var write = (dir, name, value) => {
-  mkdirSync2(dir, { recursive: true });
+  mkdirSync2(dir, PRIVATE_DIR);
   liveFiles(dir);
   writeFileSync(join3(dir, name), JSON.stringify(value), { mode: 384 });
 };

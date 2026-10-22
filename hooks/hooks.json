@@ -3,17 +3,17 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__plan_check",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__plan_check$",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-plan",
+            "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-plan",
             "timeout": 10
           }
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__connect_account",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__connect_account$",
         "hooks": [
           {
             "type": "command",
@@ -23,7 +23,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__verify_installation",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__verify_installation$",
         "hooks": [
           {
             "type": "command",
@@ -33,7 +33,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__check_gcm_status",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__check_gcm_status$",
         "hooks": [
           {
             "type": "command",
@@ -43,7 +43,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__upload_scan_report",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__upload_scan_report$",
         "hooks": [
           {
             "type": "command",
@@ -53,7 +53,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__set_banner_mode",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__set_banner_mode$",
         "hooks": [
           {
             "type": "command",
@@ -63,7 +63,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__customise_banner",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__customise_banner$",
         "hooks": [
           {
             "type": "command",
@@ -73,7 +73,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__regenerate_banner",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__regenerate_banner$",
         "hooks": [
           {
             "type": "command",
@@ -85,7 +85,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__plan_check",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__plan_check$",
         "hooks": [
           {
             "type": "command",
@@ -95,7 +95,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__submit_check",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__submit_check$",
         "hooks": [
           {
             "type": "command",
@@ -105,7 +105,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__get_install_snippet",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__get_install_snippet$",
         "hooks": [
           {
             "type": "command",
@@ -115,7 +115,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__forget_install",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__forget_install$",
         "hooks": [
           {
             "type": "command",
@@ -125,7 +125,7 @@
         ]
       },
       {
-        "matcher": "mcp__(plugin_cookiepal_)?cookiepal__start_scan",
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__start_scan$",
         "hooks": [
           {
             "type": "command",

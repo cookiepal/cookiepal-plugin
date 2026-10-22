@@ -96,7 +96,9 @@ this one edit.
 ### 6. Report
 
 - **Installed** — the framework, the file, where in the head the tag went, and why that position
-  (quote the one-line reason from `${CLAUDE_PLUGIN_ROOT}/skills/detect-stack/references/stacks.md`).
+  (quote the one-line reason from `${CLAUDE_PLUGIN_ROOT}/skills/detect-stack/references/stacks.md`),
+  and any ⚠️ note that stack's rule gives: on Shopify, why directly after `content_for_header` is
+  the earliest it can go; in an App Router repo, each async script React will hoist above it.
   Then: review the diff, commit and deploy it, and once it is live, run
   `/cookiepal:verify-installation`.
 - **Already installed** — nothing was changed; name the file and line where the tag already is, and

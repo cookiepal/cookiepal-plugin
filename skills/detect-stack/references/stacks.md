@@ -105,6 +105,14 @@ Do not use `next/script` with `strategy="beforeInteractive"`: in the App Router,
 tag at the end of `<head>`, after its own chunks, so an inline tag manager snippet above it runs
 first and the consent default arrives late. The lint comment follows the rule in 2b.
 
+> ⚠️ **React hoists every `<script async src>` above this tag.** In the App Router, a raw script
+> with `async` and a `src`, anywhere under `app/` (or `src/app/`), is moved into `<head>` ahead of
+> the layout's own children, so an async tracker there can still run before the consent default.
+> Search those directories for raw `<script` elements carrying both, and name each one to the user:
+> the file, and its `src` trimmed to origin and path. Say that dropping `async` keeps a script where
+> it is written, below the banner tag. `next/script` components are not hoisted this way and need no
+> mention. When there are none, say nothing about it.
+
 ### 2b. Next.js, Pages Router
 
 Head file: `pages/_document.tsx`, `pages/_document.jsx`, `pages/_document.ts`,

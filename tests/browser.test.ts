@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -220,6 +229,71 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
       'keyword-elsewhere',
       `<form><p>Pending invitations</p><button type="button">Reject all</button></form>
        <div><p>We use cookies.</p>${TEXT_BUTTONS}</div>`,
+    ),
+  }),
+  // A "Learn more" button inside the banner text: the climb goes past it to the box with the real buttons.
+  '/keyword-learn-more': () => ({
+    body: banner(
+      'keyword-learn-more',
+      `<div><p>We use cookies. <button type="button">Learn more</button></p>${TEXT_BUTTONS}</div>`,
+    ),
+  }),
+  // The keyword split across elements, so no one text node holds the whole phrase.
+  '/keyword-split': () => ({
+    body: banner('keyword-split', `<div><p>We use <b>cookies</b> here.</p>${TEXT_BUTTONS}</div>`),
+  }),
+  // No banner: the keyword is in a long page's hero, and an unrelated "Reject all" is further down.
+  '/keyword-hero': () => ({
+    body: banner(
+      'keyword-hero',
+      `<main>
+         <section><h1>Fresh bread</h1><p>We use cookies to remember your basket.</p></section>
+         <div style="height:3000px"></div>
+         <form><p>Pending invitations</p><button type="button" onclick="reject()">Reject all</button></form>
+       </main>`,
+    ),
+  }),
+  // No banner, and the page fits the screen: no box is taller than it, so only `main` stops the climb.
+  '/keyword-short-page': () => ({
+    body: banner(
+      'keyword-short-page',
+      `<div id="root">
+         <main>
+           <section><h1>Fresh bread</h1><p>We use cookies to remember your basket.</p></section>
+           <form><p>Pending invitations</p><button type="button" onclick="reject()">Reject all</button></form>
+         </main>
+       </div>`,
+    ),
+  }),
+  // No banner, and `main` scrolls inside a 100vh shell, so no box is taller than the screen either.
+  '/keyword-shell': () => ({
+    body: banner(
+      'keyword-shell',
+      `<div id="root" style="height:100vh;display:flex;flex-direction:column">
+         <header><nav><a href="#">Shop</a></nav></header>
+         <main style="flex:1;overflow:auto">
+           <section><h1>Fresh bread</h1><p>We use cookies to remember your basket.</p></section>
+           <div style="height:3000px"></div>
+           <form><p>Pending invitations</p><button type="button" onclick="reject()">Reject all</button></form>
+         </main>
+       </div>`,
+    ),
+  }),
+  // A fixed banner with a <header> of its own: that header is the banner's, so the climb goes past it.
+  '/keyword-banner-header': () => ({
+    body: banner(
+      'keyword-banner-header',
+      `<div style="position:fixed;bottom:0"><header><p>We use cookies.</p></header>${TEXT_BUTTONS}</div>`,
+    ),
+  }),
+  // A fixed bar holding the keyword and only a "Learn more": the climb stops at the bar, not at the "Reject all" past it.
+  '/keyword-fixed': () => ({
+    body: banner(
+      'keyword-fixed',
+      `<div>
+         <div style="position:fixed;bottom:0"><p>We use cookies.</p><button type="button">Learn more</button></div>
+         <button type="button" onclick="reject()">Reject all</button>
+       </div>`,
     ),
   }),
   // Reject clears one cookie but keeps tracking anyway: the finding the check exists for.
@@ -909,21 +983,39 @@ describe('install ID consent through the CLI', () => {
   // The hook is what opens the gate, and only for an erasure that actually ran.
   // Every shape below is one a PostToolUse payload really takes, and all but the
   // last must leave the gate shut: it fails closed or it is not a gate.
+  /** Moves every recorded erasure back past the gap, as if the next one came a while later. */
+  const backdateErasures = (env: Record<string, string>) => {
+    const path = join(env.COOKIEPAL_DATA_DIR, 'forgotten-install-ids.json');
+    // A response that kept the gate shut wrote no marker, so there is nothing to move.
+    if (!existsSync(path)) return;
+    const forgotten = JSON.parse(readFileSync(path, 'utf8')) as Record<string, number[]>;
+    const earlier = Object.fromEntries(
+      Object.entries(forgotten).map(([id, times]) => [id, times.map((time) => time - 60_000)]),
+    );
+    writeFileSync(path, JSON.stringify(earlier));
+  };
+
   const sharedWith = async (env: Record<string, string>) =>
     (await cli(['consent', 'share'], '', env)).output.consent?.installId ?? '';
 
   for (const [name, response] of [
-    ['an error flag', { isError: true, structuredContent: { deleted: 0, remaining: 2 } }],
+    // Both error cases otherwise claim a complete erasure, so only the error flag shuts them.
+    ['an error flag', { isError: true, structuredContent: { deleted: 0, remaining: 0 } }],
+    ['a content-only error', { content: [{ type: 'text', text: '{"isError":true,"deleted":0,"remaining":0}' }] }],
     ['a partial erasure', { isError: false, structuredContent: { deleted: 2, remaining: 5 } }],
     ['a plain string failure', 'Deletion is not available yet.'],
-    ['a content-only error', { content: [{ type: 'text', text: '{"isError":true}' }] }],
+    ['a reply with no count of what it deleted', { structuredContent: { remaining: 0 } }],
     ['a shape it cannot read', { nothing: 'useful' }],
   ] as [string, unknown][]) {
     test(`the forget_install hook keeps the gate shut on ${name}`, async () => {
       const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
       const installId = await sharedWith(env);
 
-      await cli(['save-forgotten'], JSON.stringify({ tool_input: { installId }, tool_response: response }), env);
+      const payload = JSON.stringify({ tool_input: { installId }, tool_response: response });
+      // Twice, far enough apart, so only the response itself can keep the gate shut.
+      await cli(['save-forgotten'], payload, env);
+      backdateErasures(env);
+      await cli(['save-forgotten'], payload, env);
       const refused = (await cli(['consent', 'decline'], '', env)).output;
 
       assert.equal(refused.ok, false);
@@ -944,6 +1036,7 @@ describe('install ID consent through the CLI', () => {
       await cli(['save-forgotten'], payload, env);
       assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
 
+      backdateErasures(env);
       await cli(['save-forgotten'], payload, env);
       const allowed = (await cli(['consent', 'decline'], '', env)).output;
 
@@ -963,6 +1056,7 @@ describe('install ID consent through the CLI', () => {
     });
 
     await cli(['save-forgotten'], payload, env);
+    backdateErasures(env);
     await cli(['save-forgotten'], payload, env);
     await cli(['prepare'], 'https://example.com', env);
 
@@ -1037,6 +1131,58 @@ describe('the plan_check hook', () => {
   });
 });
 
+describe('the submit_check hook and the risk read', () => {
+  const CHECK_ID = '0192f3a4-1b2c-7d3e-8f40-123456789abc';
+
+  /** A PostToolUse payload as large as a busy page makes it: every cookie and host, sent and returned. */
+  const busyPayload = (count: number) => {
+    const cookies = Array.from({ length: count }, (_, i) => ({
+      name: `_tracker_${i}_${'x'.repeat(40)}`,
+      domain: `.cdn-${i}.example-advertising-network.com`,
+      path: '/',
+      expires: 1_800_000_000,
+      httpOnly: false,
+      secure: true,
+      category: 'other',
+    }));
+    const hosts = Array.from({ length: count }, (_, i) => `pixel-${i}.example-advertising-network.com`);
+    const submit = { checkId: CHECK_ID, cookies, thirdPartyHosts: hosts, truncated: false };
+    const response = { ...submit, page: 'https://example.com/', country: 'Brazil', summary: {} };
+    return JSON.stringify({
+      tool_name: 'mcp__plugin_cookiepal_cookiepal__submit_check',
+      tool_input: submit,
+      tool_response: { structuredContent: response, content: [{ type: 'text', text: JSON.stringify(response) }] },
+    });
+  };
+
+  test('a result far larger than a URL is still stored, so the read runs on a busy page', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const payload = busyPayload(400);
+    assert.ok(payload.length > 256 * 1024, `the payload is ${payload.length} bytes`);
+    const hook = await cli(['save-result'], payload, env);
+    assert.equal(hook.raw, '');
+    assert.equal(hook.code, 0);
+
+    const { output } = await cli(['assess', CHECK_ID], '', env);
+    assert.equal(output.ok, true, output.error);
+  });
+
+  test('the read carries its own notice that the names in it came from the page', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    await cli(['save-result'], busyPayload(1), env);
+    const { output } = await cli(['assess', CHECK_ID], '', env);
+    const { notice } = output as unknown as { notice?: string };
+    assert.match(notice ?? '', /read from the checked page/);
+    for (const field of ['text', 'inventoryText', 'assessment', 'files']) assert.ok(notice?.includes(field), field);
+  });
+
+  test('a malformed check ID is told apart from a result that has gone', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    assert.match((await cli(['assess', 'not-a-check'], '', env)).output.error ?? '', /not a check ID/);
+    assert.match((await cli(['assess', CHECK_ID], '', env)).output.error ?? '', /last 30 minutes/);
+  });
+});
+
 describe('the plan_check guard', () => {
   const guard = (url: string) =>
     cli(['guard-plan'], JSON.stringify({ hook_event_name: 'PreToolUse', tool_input: { url } }));
@@ -1063,6 +1209,42 @@ describe('the plan_check guard', () => {
     const url = `https://example.com/?token=${'x'.repeat(70_000)}`;
     const { raw } = await cli(['guard-plan'], JSON.stringify({ tool_input: { url } }));
     assert.equal(JSON.parse(raw).hookSpecificOutput.permissionDecision, 'deny');
+  });
+
+  const withId = (installId: string, env: Record<string, string>) =>
+    cli(['guard-plan'], JSON.stringify({ tool_input: { url: 'https://example.com/', installId } }), env);
+  const decisionOf = (raw: string) => (raw ? JSON.parse(raw).hookSpecificOutput.permissionDecision : 'allow');
+
+  test('lets the install ID through only while it is being shared', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const installId = (await cli(['consent', 'share'], '', env)).output.consent?.installId ?? '';
+    assert.equal(decisionOf((await withId(installId, env)).raw), 'allow');
+
+    // A refused stop-sharing keeps the ID on this machine, and in the conversation.
+    assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
+    const { raw } = await withId(installId, env);
+    assert.equal(decisionOf(raw), 'deny');
+    assert.match(JSON.parse(raw).hookSpecificOutput.permissionDecisionReason, /only while the user is sharing/);
+  });
+
+  test('refuses an install ID that is not the one stored here, or with no data folder to check', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    await cli(['consent', 'share'], '', env);
+    assert.equal(decisionOf((await withId('3b241101-e2bb-4255-8caf-4136c566a962', env)).raw), 'deny');
+    assert.equal(
+      decisionOf((await withId('3b241101-e2bb-4255-8caf-4136c566a962', { COOKIEPAL_DATA_DIR: '' })).raw),
+      'deny',
+    );
+  });
+
+  test('sending the install ID retires its erasure marker, even with no prepare before it', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const installId = (await cli(['consent', 'share'], '', env)).output.consent?.installId ?? '';
+    const path = join(env.COOKIEPAL_DATA_DIR, 'forgotten-install-ids.json');
+    writeFileSync(path, JSON.stringify({ [installId]: [0, 60_000] }));
+
+    await withId(installId, env);
+    assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
   });
 
   test('lets a bare page through, and ignores input it cannot read', async () => {
@@ -1313,6 +1495,63 @@ describe('the consent action', () => {
     assert.equal(reject?.pressed, true);
     assert.equal(reject?.matchedBy, 'text');
     assert.deepEqual(reject?.cookiesAfterClick, []);
+  });
+
+  // Only the banner text as a keyword, so the "Accept all" label cannot locate the banner by itself.
+  const BANNER_TEXT_ONLY = { ...MATCHERS, banner: { ...MATCHERS.banner, keywords: ['we use cookies'] } };
+
+  test('a "Learn more" button inside the banner text does not stop the search for the real buttons', async () => {
+    const { output } = await withConsent('/keyword-learn-more', BANNER_TEXT_ONLY);
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, true);
+    assert.equal(consent?.reject.pressed, true);
+  });
+
+  test('a keyword split across elements still locates the banner', async () => {
+    const { output } = await withConsent('/keyword-split', BANNER_TEXT_ONLY);
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, true);
+    assert.equal(consent?.reject.pressed, true);
+  });
+
+  test('keyword text in a hero does not reach an unrelated button further down the page', async () => {
+    const { output } = await withConsent('/keyword-hero');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.bannerFound, true);
+    assert.equal(consent?.reject.pressed, false);
+    assert.equal(consent?.reject.reason, 'no-button');
+  });
+
+  for (const [path, layout] of [
+    ['/keyword-short-page', 'a page that fits the screen'],
+    ['/keyword-shell', 'a main that scrolls inside a 100vh shell'],
+  ]) {
+    test(`keyword text in a hero stops at main on ${layout}`, async () => {
+      const { output } = await withConsent(path);
+      const consent = output.submit.consent;
+
+      assert.equal(consent?.reject.pressed, false);
+      assert.equal(consent?.reject.reason, 'no-button');
+    });
+  }
+
+  test('a header inside a fixed banner is part of the banner, not the page', async () => {
+    const { output } = await withConsent('/keyword-banner-header', BANNER_TEXT_ONLY);
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, true);
+    assert.equal(consent?.reject.pressed, true);
+  });
+
+  test('the search from a keyword stops at a fixed box', async () => {
+    const { output } = await withConsent('/keyword-fixed');
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.reject.pressed, false);
+    assert.equal(consent?.reject.reason, 'no-button');
   });
 
   test('AC3: tracking that keeps going after reject is reported as set after the reject', async () => {
