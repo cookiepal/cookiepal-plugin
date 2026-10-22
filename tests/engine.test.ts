@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import { CheckError } from '../src/browser.ts';
-import { ENGINE_VERSION, engineDir, ensureEngine } from '../src/engine.ts';
+import { ENGINE_VERSION, engineDir, ensureEngine, installArgs } from '../src/engine.ts';
 
 const dirs: string[] = [];
 const freshDir = () => {
@@ -62,6 +62,11 @@ describe('ensureEngine', () => {
     const dir = freshDir();
 
     withoutNpm(() => assert.throws(() => ensureEngine(dir), CheckError));
+  });
+
+  // better-sqlite3 has no prebuild for every Node version, and compiling it needs a C++ toolchain.
+  test('installs without running dependency install scripts', () => {
+    assert.ok(installArgs(freshDir()).includes('--ignore-scripts'));
   });
 
   test('engineDir is the plugin data folder plus "engine", namespacing it from everything else stored there', () => {

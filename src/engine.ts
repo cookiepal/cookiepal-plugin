@@ -5,9 +5,12 @@
  * is installed into the plugin's own data folder on first use, the same way a
  * project installs any other npm dependency, and never copied into this repo.
  *
- * Puppeteer's own Chromium download is skipped (`PUPPETEER_SKIP_DOWNLOAD=1`):
- * the crawl runs against the user's own browser, the same one `findBrowser`
- * finds for every other check here.
+ * The install runs with `--ignore-scripts`. No dependency the engine imports
+ * needs one, and the two that have one would only do harm here:
+ * `better-sqlite3`, which only the CLI's own dashboard uses, has no prebuild
+ * for every Node version and falls back to compiling, which fails without a
+ * C++ toolchain; and Puppeteer's would download a Chromium nothing uses, since
+ * the crawl runs the user's own browser, the one `findBrowser` finds.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -44,6 +47,17 @@ const installedVersion = (dataDir: string): string | null => {
   }
 };
 
+/** The `npm install` arguments for the pinned engine, into the plugin's data folder. */
+export const installArgs = (dataDir: string): string[] => [
+  'install',
+  '--prefix',
+  engineDir(dataDir),
+  '--no-audit',
+  '--no-fund',
+  '--ignore-scripts',
+  `@cookiepal-oss/cli@${ENGINE_VERSION}`,
+];
+
 /**
  * Installs the pinned engine version into the plugin's data folder, unless it
  * is already there. Every failure is a `CheckError` with a plain sentence: no
@@ -54,14 +68,7 @@ export const ensureEngine = (dataDir: string): void => {
 
   if (!existsSync(engineDir(dataDir))) mkdirSync(engineDir(dataDir), { recursive: true });
 
-  const result = spawnSync(
-    'npm',
-    ['install', '--prefix', engineDir(dataDir), '--no-audit', '--no-fund', `@cookiepal-oss/cli@${ENGINE_VERSION}`],
-    {
-      env: { ...process.env, PUPPETEER_SKIP_DOWNLOAD: '1' },
-      encoding: 'utf8',
-    },
-  );
+  const result = spawnSync('npm', installArgs(dataDir), { encoding: 'utf8' });
 
   if (result.error) {
     throw new CheckError(`Could not run npm to install the crawl engine: ${result.error.message}`);
