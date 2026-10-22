@@ -9997,27 +9997,6 @@ var GCM_READING_EXPRESSION = `(() => { try {
   return { consentModeFound: true, entries, entriesMissingDefault, wasSetLate: Boolean(ics.wasSetLate) };
 } catch (e) { return null; } })()`;
 
-// src/gcm.ts
-var MAX_ENTRIES = 16;
-var MAX_ENTRY_LENGTH = 64;
-var IDENTIFIER = /^[A-Za-z0-9_]+$/;
-var isRecord4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-var entriesOf = (value) => {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (entry) => typeof entry === "string" && entry.length <= MAX_ENTRY_LENGTH && IDENTIFIER.test(entry)
-  ).slice(0, MAX_ENTRIES);
-};
-var parseGcmReading = (value) => {
-  if (!isRecord4(value)) return { consentModeFound: false, entries: [], entriesMissingDefault: [], wasSetLate: false };
-  return {
-    consentModeFound: value.consentModeFound === true,
-    entries: entriesOf(value.entries),
-    entriesMissingDefault: entriesOf(value.entriesMissingDefault),
-    wasSetLate: value.wasSetLate === true
-  };
-};
-
 // src/savedPlans.ts
 import { randomUUID as randomUUID2 } from "node:crypto";
 import { mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync3, statSync, writeFileSync as writeFileSync2 } from "node:fs";
@@ -10061,10 +10040,11 @@ var SNIPPETS = "snippets";
 var EVIDENCE = "evidence";
 var SCANS = "scans";
 var SCAN_PROGRESS = "scan-progress";
+var GCM_READINGS = "gcm-readings";
 var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 var MAX_AGE_MS = 30 * 60 * 1e3;
 var isCheckId = (value) => typeof value === "string" && UUID2.test(value);
-var isRecord5 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isRecord4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var parseJson = (text) => {
   if (typeof text !== "string") return null;
   try {
@@ -10076,11 +10056,11 @@ var parseJson = (text) => {
 var resultFrom = (response) => {
   if (typeof response === "string") return resultFrom(parseJson(response));
   if (Array.isArray(response)) {
-    const text = response.find((block) => isRecord5(block) && block.type === "text");
-    return isRecord5(text) ? resultFrom(parseJson(text.text)) : null;
+    const text = response.find((block) => isRecord4(block) && block.type === "text");
+    return isRecord4(text) ? resultFrom(parseJson(text.text)) : null;
   }
-  if (!isRecord5(response)) return null;
-  if (isRecord5(response.structuredContent)) return response.structuredContent;
+  if (!isRecord4(response)) return null;
+  if (isRecord4(response.structuredContent)) return response.structuredContent;
   if (Array.isArray(response.content)) return resultFrom(response.content);
   return response;
 };
@@ -10111,7 +10091,7 @@ var write = (dir, name, value) => {
 var isRef = (value) => typeof value === "string" && UUID2.test(value);
 var isDomainId = (value) => typeof value === "string" && /^[A-Za-z0-9.\-_]{1,253}$/.test(value);
 var savePlan = (dataDir2, payload) => {
-  if (!isRecord5(payload) || !isRecord5(payload.tool_input)) return false;
+  if (!isRecord4(payload) || !isRecord4(payload.tool_input)) return false;
   const { url } = payload.tool_input;
   const plan = resultFrom(payload.tool_response);
   if (typeof url !== "string" || !plan || !isCheckId(plan.checkId)) return false;
@@ -10131,7 +10111,7 @@ var takePlanFor = (dataDir2, page, notBefore) => {
     } catch {
       continue;
     }
-    if (!isRecord5(saved) || typeof saved.url !== "string" || !isRecord5(saved.plan)) continue;
+    if (!isRecord4(saved) || typeof saved.url !== "string" || !isRecord4(saved.plan)) continue;
     if (typeof saved.savedAt !== "number" || saved.savedAt < notBefore) continue;
     if (pageOf(saved.url) !== page) continue;
     rmSync3(path, { force: true });
@@ -10148,9 +10128,10 @@ var sweep = (dataDir2) => {
   liveFiles(join3(dataDir2, EVIDENCE));
   liveFiles(join3(dataDir2, SCANS));
   liveFiles(join3(dataDir2, SCAN_PROGRESS));
+  liveFiles(join3(dataDir2, GCM_READINGS));
 };
 var saveResult = (dataDir2, payload) => {
-  if (!isRecord5(payload)) return false;
+  if (!isRecord4(payload)) return false;
   const result = resultFrom(payload.tool_response);
   if (!result || !isCheckId(result.checkId)) return false;
   write(join3(dataDir2, RESULTS), `${result.checkId}.json`, result);
@@ -10165,7 +10146,7 @@ var readResult = (dataDir2, checkId) => {
       return null;
     }
     const saved = JSON.parse(readFileSync2(path, "utf8"));
-    return isRecord5(saved) ? saved : null;
+    return isRecord4(saved) ? saved : null;
   } catch {
     return null;
   }
@@ -10183,7 +10164,7 @@ var writeRendered = (dataDir2, checkId, name, content) => {
   }
 };
 var saveSnippet = (dataDir2, payload) => {
-  if (!isRecord5(payload)) return false;
+  if (!isRecord4(payload)) return false;
   const result = resultFrom(payload.tool_response);
   if (!result || typeof result.domainId !== "string" || typeof result.scriptUrl !== "string") {
     return false;
@@ -10207,7 +10188,7 @@ var readSnippet = (dataDir2, domainId) => {
         continue;
       }
       const saved = JSON.parse(readFileSync2(path, "utf8"));
-      if (!isRecord5(saved) || typeof saved.domainId !== "string") continue;
+      if (!isRecord4(saved) || typeof saved.domainId !== "string") continue;
       if (typeof saved.scriptUrl !== "string" || typeof saved.savedAt !== "number") continue;
       return { domainId: saved.domainId, scriptUrl: saved.scriptUrl, savedAt: saved.savedAt };
     } catch {
@@ -10229,7 +10210,26 @@ var readEvidence = (dataDir2, domainId) => {
       return null;
     }
     const saved = JSON.parse(readFileSync2(path, "utf8"));
-    return isRecord5(saved) && isRecord5(saved.evidence) ? saved.evidence : null;
+    return isRecord4(saved) && isRecord4(saved.evidence) ? saved.evidence : null;
+  } catch {
+    return null;
+  }
+};
+var saveGcmReading = (dataDir2, host, reading) => {
+  if (!isDomainId(host)) return false;
+  write(join3(dataDir2, GCM_READINGS), `${host}.json`, { host, reading, savedAt: Date.now() });
+  return true;
+};
+var readGcmReading = (dataDir2, host) => {
+  if (!isDomainId(host)) return null;
+  const path = join3(dataDir2, GCM_READINGS, `${host}.json`);
+  try {
+    if (isExpired(path)) {
+      rmSync3(path, { force: true });
+      return null;
+    }
+    const saved = JSON.parse(readFileSync2(path, "utf8"));
+    return isRecord4(saved) && isRecord4(saved.reading) ? saved.reading : null;
   } catch {
     return null;
   }
@@ -10253,7 +10253,7 @@ var readTarget = (dataDir2, ref) => {
   } catch {
     return null;
   }
-  if (!isRecord5(saved) || typeof saved.page !== "string" || typeof saved.target !== "string") return null;
+  if (!isRecord4(saved) || typeof saved.page !== "string" || typeof saved.target !== "string") return null;
   if (typeof saved.savedAt !== "number") return null;
   return { page: saved.page, target: saved.target, savedAt: saved.savedAt };
 };
@@ -10288,7 +10288,7 @@ var isCrawlableUrl = (value) => {
   return true;
 };
 var saveScan = (dataDir2, payload) => {
-  if (!isRecord5(payload)) return false;
+  if (!isRecord4(payload)) return false;
   const result = resultFrom(payload.tool_response);
   if (!result || !isScanId(result.scanId)) return false;
   if (typeof result.domainId !== "string" || typeof result.url !== "string") return false;
@@ -10313,7 +10313,7 @@ var readScan = (dataDir2, scanId) => {
       return null;
     }
     const saved = JSON.parse(readFileSync2(path, "utf8"));
-    if (!isRecord5(saved)) return null;
+    if (!isRecord4(saved)) return null;
     const { scanId: id, domainId, url, maxPages, savedAt } = saved;
     if (typeof id !== "string" || typeof domainId !== "string" || typeof url !== "string") return null;
     if (typeof maxPages !== "number" || typeof savedAt !== "number") return null;
@@ -10330,7 +10330,7 @@ var newestScan = (dataDir2) => {
     } catch {
       continue;
     }
-    if (!isRecord5(saved) || typeof saved.scanId !== "string") continue;
+    if (!isRecord4(saved) || typeof saved.scanId !== "string") continue;
     const scan = readScan(dataDir2, saved.scanId);
     if (scan) return scan;
   }
@@ -10350,11 +10350,71 @@ var readScanProgress = (dataDir2, scanId) => {
       return null;
     }
     const saved = JSON.parse(readFileSync2(path, "utf8"));
-    if (!isRecord5(saved) || typeof saved.status !== "string" || typeof saved.scanId !== "string") return null;
+    if (!isRecord4(saved) || typeof saved.status !== "string" || typeof saved.scanId !== "string") return null;
     return saved;
   } catch {
     return null;
   }
+};
+
+// src/scanGuard.ts
+var isRecord5 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var UPLOAD_GUARD_REASON = "upload_scan_report takes only the result scan status reported for this scan ID. Call scan status for the scanId, and send its pagesScanned, cookies, thirdPartyHosts and truncated unchanged; send blockedByRobots only when scan status reported the scan as blocked.";
+var stableStringify = (value) => {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value;
+    const keys = Object.keys(record).sort();
+    return `{${keys.map((key2) => `${JSON.stringify(key2)}:${stableStringify(record[key2])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+var uploadDecision = (dir, input) => {
+  if (!dir || !isRecord5(input) || typeof input.scanId !== "string") return "deny";
+  const progress = readScanProgress(dir, input.scanId);
+  if (!progress) return "deny";
+  if (progress.status === "blocked") return input.blockedByRobots === true ? "allow" : "deny";
+  if (progress.status !== "done") return "deny";
+  if (input.blockedByRobots === true) return "deny";
+  if (input.pagesScanned !== progress.pagesScanned) return "deny";
+  if (stableStringify(input.cookies) !== stableStringify(progress.cookies)) return "deny";
+  if (stableStringify(input.thirdPartyHosts ?? []) !== stableStringify(progress.thirdPartyHosts)) return "deny";
+  if ((input.truncated ?? false) !== progress.truncated) return "deny";
+  return "allow";
+};
+
+// src/gcm.ts
+var MAX_ENTRIES = 16;
+var MAX_ENTRY_LENGTH = 64;
+var IDENTIFIER = /^[A-Za-z0-9_]+$/;
+var isRecord6 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var entriesOf = (value) => {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (entry) => typeof entry === "string" && entry.length <= MAX_ENTRY_LENGTH && IDENTIFIER.test(entry)
+  ).slice(0, MAX_ENTRIES);
+};
+var parseGcmReading = (value) => {
+  if (!isRecord6(value)) return { consentModeFound: false, entries: [], entriesMissingDefault: [], wasSetLate: false };
+  return {
+    consentModeFound: value.consentModeFound === true,
+    entries: entriesOf(value.entries),
+    entriesMissingDefault: entriesOf(value.entriesMissingDefault),
+    wasSetLate: value.wasSetLate === true
+  };
+};
+var gcmDecision = (dir, input) => {
+  if (!dir || !isRecord6(input) || typeof input.url !== "string") return "deny";
+  let host;
+  try {
+    host = new URL(input.url).hostname;
+  } catch {
+    return "deny";
+  }
+  const saved = readGcmReading(dir, host);
+  if (!saved) return "deny";
+  const fields = ["url", "seenAt", "reading"];
+  return fields.every((field) => stableStringify(input[field]) === stableStringify(saved[field])) ? "allow" : "deny";
 };
 
 // src/install.ts
@@ -10409,7 +10469,7 @@ var FIND = function find(maxSrc, maxTag, maxMatches, waitMs) {
   });
 };
 var findTagExpression = () => `(${FIND.toString()})(${MAX_SRC}, ${MAX_TAG}, ${MAX_MATCHES}, ${BANNER_WAIT_MS})`;
-var isRecord6 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isRecord7 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var sameScript = (a, b) => {
   try {
     const found = new URL(a);
@@ -10420,7 +10480,7 @@ var sameScript = (a, b) => {
   }
 };
 var parseFoundTag = (value, expectedScriptUrl) => {
-  if (!isRecord6(value) || !Array.isArray(value.matches)) return null;
+  if (!isRecord7(value) || !Array.isArray(value.matches)) return null;
   const bannerRan = value.bannerRan === true;
   const text = (field, max) => {
     if (typeof field !== "string" || field.length === 0 || field.length > max) return null;
@@ -10429,14 +10489,14 @@ var parseFoundTag = (value, expectedScriptUrl) => {
   const raw = typeof value.count === "number" && Number.isFinite(value.count) ? value.count : 0;
   const count = Math.max(0, Math.trunc(raw));
   const matches = value.matches.map(
-    (match) => isRecord6(match) ? { scriptSrc: text(match.src, MAX_SRC), tag: text(match.tag, MAX_TAG) } : { scriptSrc: null, tag: null }
+    (match) => isRecord7(match) ? { scriptSrc: text(match.src, MAX_SRC), tag: text(match.tag, MAX_TAG) } : { scriptSrc: null, tag: null }
   ).filter((match) => match.scriptSrc !== null);
   if (matches.length === 0) return { ...NOT_FOUND, count };
   const chosen = expectedScriptUrl && matches.find((m) => sameScript(m.scriptSrc, expectedScriptUrl)) || matches[0];
   return { ...chosen, count: Math.max(count, matches.length), bannerRan };
 };
 var verifyDecision = (dir, input) => {
-  if (!dir || !isRecord6(input) || !isRecord6(input.evidence)) return "deny";
+  if (!dir || !isRecord7(input) || !isRecord7(input.evidence)) return "deny";
   const { evidence } = input;
   if (typeof evidence.url !== "string") return "deny";
   let domainId;
@@ -10843,11 +10903,10 @@ var HOSTNAME = /^[A-Za-z0-9_.:\x5B\x5D\x2D]+$/;
 var MAX_EXPIRES = 253402300799;
 var SAME_SITE = /* @__PURE__ */ new Set(["Strict", "Lax", "None"]);
 var fits = (value, pattern, max, min = 1) => value.length >= min && value.length <= max && pattern.test(value);
+var cookieFits = (cookie, limits) => fits(cookie.name, COOKIE_NAME, limits.maxCookieNameLength, 0) && fits(cookie.domain, COOKIE_DOMAIN, limits.maxCookieDomainLength) && fits(cookie.path, COOKIE_PATH, limits.maxCookiePathLength);
 var toSubmitted = (cookie, limits) => {
+  if (!cookieFits(cookie, limits)) return null;
   const { name, domain, path } = cookie;
-  if (!fits(name, COOKIE_NAME, limits.maxCookieNameLength, 0)) return null;
-  if (!fits(domain, COOKIE_DOMAIN, limits.maxCookieDomainLength)) return null;
-  if (!fits(path, COOKIE_PATH, limits.maxCookiePathLength)) return null;
   let expires = null;
   if (cookie.expires === -1) {
     expires = -1;
@@ -10944,32 +11003,6 @@ var buildSubmission = (checkId, captured, hosts, limits) => {
     droppedCookies,
     droppedHosts
   };
-};
-
-// src/scanGuard.ts
-var isRecord7 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-var UPLOAD_GUARD_REASON = "upload_scan_report takes only the result scan status reported for this scan ID. Call scan status for the scanId, and send its pagesScanned, cookies, thirdPartyHosts and truncated unchanged; send blockedByRobots only when scan status reported the scan as blocked.";
-var stableStringify = (value) => {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (value && typeof value === "object") {
-    const record = value;
-    const keys = Object.keys(record).sort();
-    return `{${keys.map((key2) => `${JSON.stringify(key2)}:${stableStringify(record[key2])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-};
-var uploadDecision = (dir, input) => {
-  if (!dir || !isRecord7(input) || typeof input.scanId !== "string") return "deny";
-  const progress = readScanProgress(dir, input.scanId);
-  if (!progress) return "deny";
-  if (progress.status === "blocked") return input.blockedByRobots === true ? "allow" : "deny";
-  if (progress.status !== "done") return "deny";
-  if (input.blockedByRobots === true) return "deny";
-  if (input.pagesScanned !== progress.pagesScanned) return "deny";
-  if (stableStringify(input.cookies) !== stableStringify(progress.cookies)) return "deny";
-  if (stableStringify(input.thirdPartyHosts ?? []) !== stableStringify(progress.thirdPartyHosts)) return "deny";
-  if ((input.truncated ?? false) !== progress.truncated) return "deny";
-  return "allow";
 };
 
 // src/check.ts
@@ -11358,7 +11391,7 @@ var scanStatus = (scanId) => {
       ok: true,
       status: "blocked",
       blockedUrl: progress.blockedUrl,
-      message: `robots.txt on this site refused the crawl at ${progress.blockedUrl}. Allow CookiePal's local crawler in robots.txt, or scan from a page robots.txt does not block, then run start_scan again.`
+      message: `robots.txt on this site disallows ${progress.blockedUrl} for every crawler (its \`User-agent: *\` rules), and the local crawl obeys those rules, so it stopped before loading anything. To scan, allow that page under \`User-agent: *\` in robots.txt, which lets in every crawler that obeys it, not only this one, then run start_scan again.`
     };
   }
   if (progress.status === "failed") {
@@ -11380,6 +11413,7 @@ var scanCommand = (sub, scanId) => {
 var GCM_SETTLE_MS = 2e3;
 var GCM_TIMEOUT_MS = 2e4;
 var gcmCheck = async () => {
+  if (!dataDir) return NO_DATA_DIR;
   const raw = (await readStdin()).trim();
   if (!raw) return { ok: false, error: "Which page should I check? Give its URL." };
   const prepared = prepareUrl(raw);
@@ -11403,12 +11437,9 @@ var gcmCheck = async () => {
   } catch (error) {
     return { ok: false, error: error instanceof CheckError ? error.message : "The page could not be loaded." };
   }
-  return {
-    ok: true,
-    url: prepared.page,
-    seenAt: (/* @__PURE__ */ new Date()).toISOString(),
-    reading: parseGcmReading(load.inspected)
-  };
+  const run2 = { url: prepared.page, seenAt: (/* @__PURE__ */ new Date()).toISOString(), reading: parseGcmReading(load.inspected) };
+  saveGcmReading(dataDir, new URL(prepared.page).hostname, run2);
+  return { ok: true, ...run2 };
 };
 var main = async () => {
   const [command, argument, extra] = process.argv.slice(2);
@@ -11432,7 +11463,7 @@ var main = async () => {
     default:
       return {
         ok: false,
-        error: "Usage: check.mjs prepare | consent share|decline [--anyway]|status|link yes|no | run <ref> | verify <ref> | assess <checkId> [inventory] | output artifact|html|markdown|terminal | scan status <scanId> | gcm | save-plan | save-result | save-snippet | save-scan | save-forgotten | guard-plan | guard-connect | guard-verify | guard-upload"
+        error: "Usage: check.mjs prepare | consent share|decline [--anyway]|status|link yes|no | run <ref> | verify <ref> | assess <checkId> [inventory] | output artifact|html|markdown|terminal | scan status <scanId> | gcm | save-plan | save-result | save-snippet | save-scan | save-forgotten | guard-plan | guard-connect | guard-verify | guard-upload | guard-gcm"
       };
   }
 };
@@ -11482,6 +11513,17 @@ var guardVerify = async () => {
     return;
   }
   if (verifyDecision(dataDir, input) === "deny") deny(VERIFY_GUARD_REASON);
+};
+var GCM_GUARD_REASON = "check_gcm_status takes only the reading a local Consent Mode check produced. Run the gcm step for the page and send its `url`, `seenAt` and `reading` unchanged: the verdict sets the domain's Consent Mode status in CookiePal, so it must come from a real reading.";
+var guardGcm = async () => {
+  let input;
+  try {
+    input = JSON.parse(await readStdin())?.tool_input;
+  } catch {
+    deny(GCM_GUARD_REASON);
+    return;
+  }
+  if (gcmDecision(dataDir, input) === "deny") deny(GCM_GUARD_REASON);
 };
 var guardUpload = async () => {
   let input;
@@ -11534,6 +11576,8 @@ if (process.argv[2] === "save-plan") {
   guardVerify();
 } else if (process.argv[2] === "guard-upload") {
   guardUpload();
+} else if (process.argv[2] === "guard-gcm") {
+  guardGcm();
 } else {
   main().catch(
     (error) => ({
@@ -11545,6 +11589,7 @@ if (process.argv[2] === "save-plan") {
 export {
   CONNECT_ASK_REASON,
   CONNECT_GUARD_REASON,
+  GCM_GUARD_REASON,
   STILL_STORED,
   VERIFY_GUARD_REASON,
   saveForgotten

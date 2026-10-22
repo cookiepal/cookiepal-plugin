@@ -789,7 +789,7 @@ var require_cjs = __commonJS({
       resetResult(RESULT);
       return parseImpl(url, 2, suffixLookup, options, RESULT).publicSuffix;
     }
-    function getDomain2(url, options) {
+    function getDomain3(url, options) {
       resetResult(RESULT);
       return parseImpl(url, 3, suffixLookup, options, RESULT).domain;
     }
@@ -806,7 +806,7 @@ var require_cjs = __commonJS({
       resetResult(RESULT);
       return parseImpl(url, 5, suffixLookup, options, RESULT).domainWithoutSuffix;
     }
-    exports.getDomain = getDomain2;
+    exports.getDomain = getDomain3;
     exports.getDomainWithoutSuffix = getDomainWithoutSuffix;
     exports.getFullDomain = getFullDomain;
     exports.getHostname = getHostname;
@@ -861,6 +861,126 @@ var findBrowser = () => {
     candidates = LINUX_BINARIES.flatMap((name) => dirs.map((dir) => join(dir, name)));
   }
   return candidates.find((path) => existsSync(path)) ?? null;
+};
+
+// src/engine.ts
+import { spawnSync } from "node:child_process";
+import { existsSync as existsSync2, mkdirSync, readFileSync } from "node:fs";
+import { join as join2 } from "node:path";
+var ENGINE_VERSION = "1.3.0";
+var engineDir = (dataDir) => join2(dataDir, "engine");
+var enginePackageJson = (dataDir) => join2(engineDir(dataDir), "node_modules", "@cookiepal-oss", "cli", "package.json");
+var engineEntry = (dataDir) => join2(engineDir(dataDir), "node_modules", "@cookiepal-oss", "cli", "dist", "engine.js");
+var installedVersion = (dataDir) => {
+  try {
+    const parsed = JSON.parse(readFileSync(enginePackageJson(dataDir), "utf8"));
+    return typeof parsed === "object" && parsed !== null && typeof parsed.version === "string" ? parsed.version : null;
+  } catch {
+    return null;
+  }
+};
+var installArgs = (dataDir) => [
+  "install",
+  "--prefix",
+  engineDir(dataDir),
+  "--no-audit",
+  "--no-fund",
+  "--ignore-scripts",
+  `@cookiepal-oss/cli@${ENGINE_VERSION}`
+];
+var ensureEngine = (dataDir) => {
+  if (installedVersion(dataDir) === ENGINE_VERSION) return;
+  if (!existsSync2(engineDir(dataDir))) mkdirSync(engineDir(dataDir), { recursive: true });
+  const result = spawnSync("npm", installArgs(dataDir), { encoding: "utf8" });
+  if (result.error) {
+    throw new CheckError(`Could not run npm to install the crawl engine: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const lastLines = (result.stderr ?? "").trim().split("\n").slice(-5).join("\n");
+    throw new CheckError(
+      `Installing the crawl engine failed.${lastLines ? ` ${lastLines}` : ""} Check this machine has npm and a network connection, then try again.`
+    );
+  }
+  if (installedVersion(dataDir) !== ENGINE_VERSION) {
+    throw new CheckError("The crawl engine did not install correctly. Try again.");
+  }
+};
+
+// src/savedPlans.ts
+import { mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync, writeFileSync } from "node:fs";
+import { join as join3 } from "node:path";
+var SCANS = "scans";
+var SCAN_PROGRESS = "scan-progress";
+var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+var MAX_AGE_MS = 30 * 60 * 1e3;
+var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isExpired = (path) => Date.now() - statSync(path).mtimeMs > MAX_AGE_MS;
+var liveFiles = (dir) => {
+  let names;
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const live = [];
+  for (const name of names) {
+    const path = join3(dir, name);
+    try {
+      if (isExpired(path)) rmSync2(path, { recursive: true, force: true });
+      else live.push({ path, mtime: statSync(path).mtimeMs });
+    } catch {
+    }
+  }
+  return live.sort((a, b) => b.mtime - a.mtime).map(({ path }) => path);
+};
+var write = (dir, name, value) => {
+  mkdirSync2(dir, { recursive: true });
+  liveFiles(dir);
+  writeFileSync(join3(dir, name), JSON.stringify(value), { mode: 384 });
+};
+var isScanId = (value) => typeof value === "string" && UUID.test(value);
+var isCrawlableUrl = (value) => {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase().replace(/^\x5B|\x5D$/g, "").replace(/\.$/, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
+    return false;
+  }
+  if (host.includes(":")) return !/^(::|f[cd]|fe[89abc])/.test(host);
+  const octets = host.split(".").map(Number);
+  if (octets.length === 4 && octets.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+    const [a, b] = octets;
+    return !(a === 0 || a === 10 || a === 127 || a === 169 && b === 254 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168);
+  }
+  return true;
+};
+var readScan = (dataDir, scanId) => {
+  if (!isScanId(scanId)) return null;
+  const path = join3(dataDir, SCANS, `${scanId}.json`);
+  try {
+    if (isExpired(path)) {
+      rmSync2(path, { force: true });
+      return null;
+    }
+    const saved = JSON.parse(readFileSync2(path, "utf8"));
+    if (!isRecord(saved)) return null;
+    const { scanId: id, domainId, url, maxPages, savedAt } = saved;
+    if (typeof id !== "string" || typeof domainId !== "string" || typeof url !== "string") return null;
+    if (typeof maxPages !== "number" || typeof savedAt !== "number") return null;
+    return { scanId: id, domainId, url, maxPages, savedAt };
+  } catch {
+    return null;
+  }
+};
+var saveScanProgress = (dataDir, scanId, progress) => {
+  if (!isScanId(scanId)) return false;
+  write(join3(dataDir, SCAN_PROGRESS), `${scanId}.json`, { scanId, ...progress, savedAt: Date.now() });
+  return true;
 };
 
 // node_modules/.pnpm/@cookiepal-oss+cookie-db@1.0.0/node_modules/@cookiepal-oss/cookie-db/dist/index.js
@@ -8876,102 +8996,55 @@ var categorise = (name) => {
   return UNKNOWN;
 };
 
-// src/engine.ts
-import { spawnSync } from "node:child_process";
-import { existsSync as existsSync2, mkdirSync, readFileSync } from "node:fs";
-import { join as join2 } from "node:path";
-var ENGINE_VERSION = "1.3.0";
-var engineDir = (dataDir) => join2(dataDir, "engine");
-var enginePackageJson = (dataDir) => join2(engineDir(dataDir), "node_modules", "@cookiepal-oss", "cli", "package.json");
-var engineEntry = (dataDir) => join2(engineDir(dataDir), "node_modules", "@cookiepal-oss", "cli", "dist", "engine.js");
-var installedVersion = (dataDir) => {
-  try {
-    const parsed = JSON.parse(readFileSync(enginePackageJson(dataDir), "utf8"));
-    return typeof parsed === "object" && parsed !== null && typeof parsed.version === "string" ? parsed.version : null;
-  } catch {
-    return null;
-  }
-};
-var ensureEngine = (dataDir) => {
-  if (installedVersion(dataDir) === ENGINE_VERSION) return;
-  if (!existsSync2(engineDir(dataDir))) mkdirSync(engineDir(dataDir), { recursive: true });
-  const result = spawnSync(
-    "npm",
-    ["install", "--prefix", engineDir(dataDir), "--no-audit", "--no-fund", `@cookiepal-oss/cli@${ENGINE_VERSION}`],
-    {
-      env: { ...process.env, PUPPETEER_SKIP_DOWNLOAD: "1" },
-      encoding: "utf8"
-    }
-  );
-  if (result.error) {
-    throw new CheckError(`Could not run npm to install the crawl engine: ${result.error.message}`);
-  }
-  if (result.status !== 0) {
-    const lastLines = (result.stderr ?? "").trim().split("\n").slice(-5).join("\n");
-    throw new CheckError(
-      `Installing the crawl engine failed.${lastLines ? ` ${lastLines}` : ""} Check this machine has npm and a network connection, then try again.`
-    );
-  }
-  if (installedVersion(dataDir) !== ENGINE_VERSION) {
-    throw new CheckError("The crawl engine did not install correctly. Try again.");
-  }
+// src/result.ts
+var COOKIE_NAME = /^[\x21-\x3A\x3C\x3E-\x7E]*$/;
+var COOKIE_DOMAIN = /^\.?[A-Za-z0-9_.:\x5B\x5D\x2D]+$/;
+var COOKIE_PATH = /^\/[\x21-\x3A\x3C-\x7E]*$/;
+var fits = (value, pattern, max, min = 1) => value.length >= min && value.length <= max && pattern.test(value);
+var cookieFits = (cookie, limits) => fits(cookie.name, COOKIE_NAME, limits.maxCookieNameLength, 0) && fits(cookie.domain, COOKIE_DOMAIN, limits.maxCookieDomainLength) && fits(cookie.path, COOKIE_PATH, limits.maxCookiePathLength);
+
+// src/scanReport.ts
+var SCAN_COOKIE_LIMITS = { maxCookieNameLength: 128, maxCookieDomainLength: 253, maxCookiePathLength: 128 };
+var MAX_SCAN_COOKIES = 500;
+var reportCookies = (cookies2) => {
+  const fitting = cookies2.filter((cookie) => cookieFits(cookie, SCAN_COOKIE_LIMITS));
+  return {
+    cookies: fitting.slice(0, MAX_SCAN_COOKIES).map((cookie) => {
+      const { category, vendor } = categorise(cookie.name);
+      return {
+        name: cookie.name,
+        domain: cookie.domain,
+        path: cookie.path,
+        duration: cookie.duration,
+        category,
+        ...vendor ? { description: vendor } : {}
+      };
+    }),
+    capped: fitting.length > MAX_SCAN_COOKIES
+  };
 };
 
-// src/savedPlans.ts
-import { mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync2, rmSync as rmSync2, statSync, writeFileSync } from "node:fs";
-import { join as join3 } from "node:path";
-var SCANS = "scans";
-var SCAN_PROGRESS = "scan-progress";
-var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-var MAX_AGE_MS = 30 * 60 * 1e3;
-var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-var isExpired = (path) => Date.now() - statSync(path).mtimeMs > MAX_AGE_MS;
-var liveFiles = (dir) => {
-  let names;
+// src/scanStart.ts
+var import_tldts2 = __toESM(require_cjs(), 1);
+var START_TIMEOUT_MS = 15e3;
+var resolveStart = async (url, fetchImpl = fetch) => {
+  let landed;
   try {
-    names = readdirSync(dir);
+    const response = await fetchImpl(url, { redirect: "follow", signal: AbortSignal.timeout(START_TIMEOUT_MS) });
+    await response.body?.cancel();
+    landed = response.url || url;
   } catch {
-    return [];
+    return url;
   }
-  const live = [];
-  for (const name of names) {
-    const path = join3(dir, name);
-    try {
-      if (isExpired(path)) rmSync2(path, { recursive: true, force: true });
-      else live.push({ path, mtime: statSync(path).mtimeMs });
-    } catch {
-    }
+  if (landed === url) return url;
+  const from = new URL(url).hostname;
+  const to = new URL(landed).hostname;
+  if ((0, import_tldts2.getDomain)(to) !== (0, import_tldts2.getDomain)(from) || !isCrawlableUrl(landed)) {
+    throw new CheckError(
+      `${from} redirects to another site, so a crawl from it would not cover this domain. Check the domain's URL in CookiePal.`
+    );
   }
-  return live.sort((a, b) => b.mtime - a.mtime).map(({ path }) => path);
-};
-var write = (dir, name, value) => {
-  mkdirSync2(dir, { recursive: true });
-  liveFiles(dir);
-  writeFileSync(join3(dir, name), JSON.stringify(value), { mode: 384 });
-};
-var isScanId = (value) => typeof value === "string" && UUID.test(value);
-var readScan = (dataDir, scanId) => {
-  if (!isScanId(scanId)) return null;
-  const path = join3(dataDir, SCANS, `${scanId}.json`);
-  try {
-    if (isExpired(path)) {
-      rmSync2(path, { force: true });
-      return null;
-    }
-    const saved = JSON.parse(readFileSync2(path, "utf8"));
-    if (!isRecord(saved)) return null;
-    const { scanId: id, domainId, url, maxPages, savedAt } = saved;
-    if (typeof id !== "string" || typeof domainId !== "string" || typeof url !== "string") return null;
-    if (typeof maxPages !== "number" || typeof savedAt !== "number") return null;
-    return { scanId: id, domainId, url, maxPages, savedAt };
-  } catch {
-    return null;
-  }
-};
-var saveScanProgress = (dataDir, scanId, progress) => {
-  if (!isScanId(scanId)) return false;
-  write(join3(dataDir, SCAN_PROGRESS), `${scanId}.json`, { scanId, ...progress, savedAt: Date.now() });
-  return true;
+  return landed;
 };
 
 // src/scan.ts
@@ -9003,9 +9076,10 @@ var run = async () => {
     const engineUrl = pathToFileURL(engineEntry(dataDir)).href;
     const { crawl } = await import(engineUrl);
     saveScanProgress(dataDir, scanId, { status: "running", pagesVisited: 0 });
+    const start = await resolveStart(scan.url);
     let pagesVisited = 0;
     const result = await crawl({
-      url: scan.url,
+      url: start,
       maxPages: scan.maxPages,
       maxDepth: MAX_DEPTH,
       concurrency: CONCURRENCY,
@@ -9021,28 +9095,18 @@ var run = async () => {
     if (result.startBlockedByRobots) {
       saveScanProgress(dataDir, scanId, {
         status: "blocked",
-        blockedUrl: result.robotsBlocked[0] ?? scan.url
+        blockedUrl: result.robotsBlocked[0] ?? start
       });
       return;
     }
-    const cookies2 = result.cookies.map((cookie) => {
-      const { category, vendor } = categorise(cookie.name);
-      return {
-        name: cookie.name,
-        domain: cookie.domain,
-        path: cookie.path,
-        duration: cookie.duration,
-        category,
-        ...vendor ? { description: vendor } : {}
-      };
-    });
+    const { cookies: cookies2, capped } = reportCookies(result.cookies);
     saveScanProgress(dataDir, scanId, {
       status: "done",
       pagesScanned: result.pagesVisited,
       cookies: cookies2,
       thirdPartyHosts: [],
       // A heuristic: the engine reports no truncation signal, so a site with exactly maxPages pages reads as truncated too.
-      truncated: result.pagesVisited >= scan.maxPages
+      truncated: result.pagesVisited >= scan.maxPages || capped
     });
   } catch (error) {
     saveScanProgress(dataDir, scanId, {
