@@ -15,9 +15,9 @@
 import { rmSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { CheckError, findBrowser } from './browser.ts';
-import { categorise } from './categorise.ts';
 import { engineEntry, ensureEngine } from './engine.ts';
 import { readScan, saveScanProgress } from './savedPlans.ts';
+import { type EngineCookie, reportCookies } from './scanReport.ts';
 
 /** Matches the published CLI's own defaults (`cookiepal crawl`'s `--max-depth`/`--concurrency`). */
 const MAX_DEPTH = 3;
@@ -26,7 +26,7 @@ const CONCURRENCY = 3;
 interface EngineModule {
   crawl: (options: Record<string, unknown>) => Promise<{
     pagesVisited: number;
-    cookies: { name: string; domain: string; path: string; duration: string; originScript?: string }[];
+    cookies: EngineCookie[];
     robotsBlocked: string[];
     startBlockedByRobots: boolean;
   }>;
@@ -89,17 +89,7 @@ const run = async (): Promise<void> => {
       return;
     }
 
-    const cookies = result.cookies.map((cookie) => {
-      const { category, vendor } = categorise(cookie.name);
-      return {
-        name: cookie.name,
-        domain: cookie.domain,
-        path: cookie.path,
-        duration: cookie.duration,
-        category,
-        ...(vendor ? { description: vendor } : {}),
-      };
-    });
+    const { cookies, capped } = reportCookies(result.cookies);
 
     saveScanProgress(dataDir, scanId, {
       status: 'done',
@@ -107,7 +97,7 @@ const run = async (): Promise<void> => {
       cookies,
       thirdPartyHosts: [],
       // A heuristic: the engine reports no truncation signal, so a site with exactly maxPages pages reads as truncated too.
-      truncated: result.pagesVisited >= scan.maxPages,
+      truncated: result.pagesVisited >= scan.maxPages || capped,
     });
   } catch (error) {
     saveScanProgress(dataDir, scanId, {
