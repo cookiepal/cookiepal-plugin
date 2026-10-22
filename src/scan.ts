@@ -77,6 +77,8 @@ const run = async (): Promise<void> => {
       keepImages: true,
       markRequests: false,
       respectRobots: true,
+      // It runs the user's own browser over up to maxPages of third-party scripts, so the sandbox stays on, as in the page check.
+      sandbox: true,
       onPageCrawled: () => {
         pagesVisited += 1;
         saveScanProgress(dataDir, scanId, { status: 'running', pagesVisited });

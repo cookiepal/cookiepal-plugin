@@ -867,7 +867,7 @@ var findBrowser = () => {
 import { spawnSync } from "node:child_process";
 import { existsSync as existsSync2, mkdirSync, readFileSync } from "node:fs";
 import { join as join2 } from "node:path";
-var ENGINE_VERSION = "1.3.0";
+var ENGINE_VERSION = "1.3.1";
 var engineDir = (dataDir) => join2(dataDir, "engine");
 var enginePackageJson = (dataDir) => join2(engineDir(dataDir), "node_modules", "@cookiepal-oss", "cli", "package.json");
 var engineEntry = (dataDir) => join2(engineDir(dataDir), "node_modules", "@cookiepal-oss", "cli", "dist", "engine.js");
@@ -9087,6 +9087,8 @@ var run = async () => {
       keepImages: true,
       markRequests: false,
       respectRobots: true,
+      // It runs the user's own browser over up to maxPages of third-party scripts, so the sandbox stays on, as in the page check.
+      sandbox: true,
       onPageCrawled: () => {
         pagesVisited += 1;
         saveScanProgress(dataDir, scanId, { status: "running", pagesVisited });

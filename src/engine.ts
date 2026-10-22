@@ -20,10 +20,10 @@ import { CheckError } from './browser.ts';
 
 /**
  * The crawl engine version this plugin installs, bumped in lockstep with
- * `@cookiepal-oss/cli`'s own releases. CPL-403 is the release that first
- * publishes the `/engine` export this plugin imports.
+ * `@cookiepal-oss/cli`'s own releases. 1.3.1 is the first whose crawl can
+ * keep Chrome's sandbox on, which `scan.ts` asks for.
  */
-export const ENGINE_VERSION = '1.3.0';
+export const ENGINE_VERSION = '1.3.1';
 
 export const engineDir = (dataDir: string): string => join(dataDir, 'engine');
 
