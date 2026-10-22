@@ -18,7 +18,8 @@ somewhere else.
   - `any` — always holds. Only the last row uses this, and the last row must.
 - **Head file**: globs separated by ` OR `, in priority order. The first glob that matches at least
   one file wins. A glob may carry a `#has:<text>` suffix: only files whose contents contain `<text>`
-  count as a match.
+  count as a match. The rows test for `</head>`, not `<head`, because `<head` is also the start of
+  `<header>`.
 
 ## The table
 
@@ -27,11 +28,11 @@ somewhere else.
 | 1 | Shopify theme | `file:layout/theme.liquid` | `layout/theme.liquid` |
 | 2 | Next.js | `dep:next` | `app/layout.tsx OR app/layout.jsx OR app/layout.ts OR app/layout.js OR src/app/layout.tsx OR src/app/layout.jsx OR src/app/layout.ts OR src/app/layout.js OR pages/_document.tsx OR pages/_document.jsx OR pages/_document.ts OR pages/_document.js OR src/pages/_document.tsx OR src/pages/_document.jsx OR src/pages/_document.ts OR src/pages/_document.js` |
 | 3 | Nuxt | `dep:nuxt` | `nuxt.config.ts OR nuxt.config.js OR nuxt.config.mjs` |
-| 4 | Astro | `dep:astro` | `src/layouts/**/*.astro#has:<head OR src/pages/**/*.astro#has:<head` |
+| 4 | Astro | `dep:astro` | `src/layouts/**/*.astro#has:</head> OR src/pages/**/*.astro#has:</head>` |
 | 5 | SvelteKit | `dep:@sveltejs/kit` | `src/app.html` |
 | 6 | Remix / React Router v7 | `dep:@remix-run/react OR dep:@react-router/dev` | `app/root.tsx OR app/root.jsx OR app/root.ts OR app/root.js` |
-| 7 | Vite | `dep:vite` | `index.html#has:<head` |
-| 8 | Custom build | `any` | `index.html#has:<head OR public/index.html#has:<head OR src/index.html#has:<head OR _layouts/**/*.html#has:<head OR layouts/**/*.html#has:<head OR templates/**/*.html#has:<head OR _includes/**/*.html#has:<head` |
+| 7 | Vite | `dep:vite` | `index.html#has:</head>` |
+| 8 | Custom build | `any` | `index.html#has:</head> OR public/index.html#has:</head> OR src/index.html#has:</head> OR _layouts/**/*.html#has:</head> OR layouts/**/*.html#has:</head> OR templates/**/*.html#has:</head> OR _includes/**/*.html#has:</head>` |
 
 ## Ambiguity pre-checks
 
@@ -46,7 +47,7 @@ the leftmost could ever win.
 | # | Stack | Group A | Group B |
 | --- | --- | --- | --- |
 | 2 | Next.js | `app/layout.tsx OR app/layout.jsx OR app/layout.ts OR app/layout.js OR src/app/layout.tsx OR src/app/layout.jsx OR src/app/layout.ts OR src/app/layout.js` | `pages/_document.tsx OR pages/_document.jsx OR pages/_document.ts OR pages/_document.js OR src/pages/_document.tsx OR src/pages/_document.jsx OR src/pages/_document.ts OR src/pages/_document.js` |
-| 4 | Astro | `src/layouts/**/*.astro#has:<head` | `src/pages/**/*.astro#has:<head` |
+| 4 | Astro | `src/layouts/**/*.astro#has:</head>` | `src/pages/**/*.astro#has:</head>` |
 
 A row needs an entry here when files from two of its globs could both serve live pages and only the
 leftmost would ever win. Inside one `**` glob that cannot happen: it already returns several files,
@@ -135,7 +136,7 @@ not.
 ### 4. Astro
 
 Head file: the one `.astro` file under `src/layouts/` or `src/pages/` whose contents contain
-`<head`. Insert as the first child of `<head>`, **with `is:inline`**:
+`</head>`. Insert as the first child of `<head>`, **with `is:inline`**:
 
 ```astro
 <script is:inline id="cookiepal" src="SRC"></script>
