@@ -105,8 +105,14 @@ Head file: `pages/_document.tsx`, `pages/_document.jsx`, `pages/_document.js`, o
 `next/document`:
 
 ```tsx
+{/* eslint-disable-next-line @next/next/no-sync-scripts -- the consent default must run before any other script */}
 <script id="cookiepal" src="SRC"></script>
 ```
+
+A script with no `async` or `defer` trips `@next/next/no-sync-scripts`, which `next/core-web-vitals`
+makes an error, so without the comment `next build` fails on Next 13 to 15. Add it only when the
+repo lints with `eslint-config-next`: ESLint reports a disable comment for a rule it has no plugin
+for.
 
 If **both** an `app/layout.*` and a `pages/_document.*` exist in the same repo, do not guess: name
 both files and ask the user which router serves the pages the banner must cover.
