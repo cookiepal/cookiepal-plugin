@@ -107,9 +107,10 @@ first and the consent default arrives late. The lint comment follows the rule in
 
 ### 2b. Next.js, Pages Router
 
-Head file: `pages/_document.tsx`, `pages/_document.jsx`, `pages/_document.js`, or the same under
-`src/pages/`. Insert a raw tag as the first child of the `<Head>` component imported from
-`next/document`:
+Head file: `pages/_document.tsx`, `pages/_document.jsx`, `pages/_document.ts`,
+`pages/_document.js`, or the same under `src/pages/`. Insert a raw tag as the first child of the
+`<Head>` component imported from `next/document`. If it is self-closing (`<Head />`, as
+`create-next-app` writes it), open it into `<Head>…</Head>` first:
 
 ```tsx
 {/* eslint-disable-next-line @next/next/no-sync-scripts -- the consent default must run before any other script */}
@@ -117,8 +118,9 @@ Head file: `pages/_document.tsx`, `pages/_document.jsx`, `pages/_document.js`, o
 ```
 
 A script with no `async` or `defer` trips `@next/next/no-sync-scripts`, which `next/core-web-vitals`
-makes an error, so without the comment `next build` fails on Next 13 to 15. Add it only when the
-repo lints with `eslint-config-next`: ESLint reports a disable comment for a rule it has no plugin
+makes an error, so without the comment `next build` fails on Next 13 to 15. Add it only when
+`eslint-config-next` or `@next/eslint-plugin-next` is in the root `package.json`, under
+`dependencies` or `devDependencies`: ESLint reports a disable comment for a rule it has no plugin
 for.
 
 If **both** an `app/layout.*` and a `pages/_document.*` exist in the same repo, do not guess: name

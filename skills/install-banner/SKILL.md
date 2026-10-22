@@ -76,8 +76,10 @@ the `src` from step 2. It has four outcomes:
 
 Apply that stack's insertion rule from
 `${CLAUDE_PLUGIN_ROOT}/skills/detect-stack/references/stacks.md`. Change only the head file identified
-in step 1, and only by adding the tag — plus, for Next.js, the lint comment above it, and for an
-App Router layout with no `<head>`, the `<head>` element around it. Match the file's existing
+in step 1, and only by adding the tag — plus, for Next.js, the lint comment above it when the
+stack's rule says the repo needs one, the `<head>` element around it in an App Router layout that
+has none, and opening a self-closing `<Head />` into `<Head>…</Head>` in a Pages Router document.
+Match the file's existing
 indentation and quote style. Never reformat the rest of the file, never reorder tags that were
 already there, and never touch any other file.
 
