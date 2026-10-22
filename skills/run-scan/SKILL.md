@@ -46,7 +46,7 @@ CHECK scan status <scanId>
 
 While `status` is `running`, tell the user a scan is in progress (mention `pagesVisited` if useful) and call this again after a short pause — a few seconds is enough, there is no need to hurry. Keep polling until `status` is no longer `running`.
 
-- **`blocked`** — robots.txt refused the crawl. Tell the user the `blockedUrl` and that CookiePal's local crawler needs to be allowed in robots.txt, or that they can scan from a page it does not block. Then go to step 3 and send only `blockedByRobots`, so CookiePal stops reporting the scan as running.
+- **`blocked`** — robots.txt refused the crawl. Give the user scan status's `message` as it is: robots.txt disallows the `blockedUrl` for every crawler, and the only change that lets the scan run is allowing it under `User-agent: *`. There is no CookiePal crawler to allow by name, and a scan always starts from the domain's own URL. Then go to step 3 and send only `blockedByRobots`, so CookiePal stops reporting the scan as running.
 - **`done`** — the crawl finished. Its `pagesScanned`, `cookies`, `thirdPartyHosts` and `truncated` are exactly what step 3 uploads.
 - A failed call here (`"ok": false`) means the crawl itself failed on this machine — report the `error` and stop.
 

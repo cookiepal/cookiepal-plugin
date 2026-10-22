@@ -649,8 +649,10 @@ const scanStatus = (scanId: string | undefined): Output => {
       status: 'blocked',
       blockedUrl: progress.blockedUrl,
       message:
-        `robots.txt on this site refused the crawl at ${progress.blockedUrl}. Allow CookiePal's local ` +
-        'crawler in robots.txt, or scan from a page robots.txt does not block, then run start_scan again.',
+        `robots.txt on this site disallows ${progress.blockedUrl} for every crawler (its \`User-agent: *\` ` +
+        'rules), and the local crawl obeys those rules, so it stopped before loading anything. To scan, allow ' +
+        'that page under `User-agent: *` in robots.txt, which lets in every crawler that obeys it, not only ' +
+        'this one, then run start_scan again.',
     };
   }
   if (progress.status === 'failed') {
