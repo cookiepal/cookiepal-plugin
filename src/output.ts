@@ -15,7 +15,7 @@ import { join } from 'node:path';
  * `asked` is false until the user has answered once. Publishing sends the
  * checked page, every cookie name and every third-party host to claude.ai, and
  * the page may be an internal or localhost one, so the skill asks before the
- * first publish rather than after \u2014 the same way it asks before creating the
+ * first publish rather than after — the same way it asks before creating the
  * install ID. Everything below that first step stays on this machine.
  */
 export type OutputMode = 'artifact' | 'html' | 'markdown' | 'terminal';
@@ -56,7 +56,7 @@ export const readOutput = (dataDir: string): OutputState => {
 export const setOutput = (dataDir: string, mode: string): OutputState | null => {
   if (!isMode(mode)) return null;
   const state: OutputState = { mode, asked: true };
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   writeFileSync(join(dataDir, FILE), `${JSON.stringify(state)}\n`, { mode: 0o600 });
   return state;
 };
