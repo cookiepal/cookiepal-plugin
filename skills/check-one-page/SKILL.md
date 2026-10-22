@@ -151,7 +151,7 @@ A form whose path in `files` is `null` could not be written: treat it as unavail
 
 Move down a step only when the one above is actually unavailable, never by choice. Artifacts need a signed-in claude.ai account and are off in CI and the Agent SDK; if publishing fails or is unavailable, say so in one line and offer the next form. Never treat it as the check failing — the read in step 7 is the deliverable, and every form below it carries the same content.
 
-When the user named a form in the command, that is the one to use. `terminal` means write nothing further and offer nothing.
+When the user named a form in the command, that is the one to use. `terminal` means offer nothing further. The three files are written for every check all the same, so give a path only if the user asks for one.
 
 The three files hold the same findings and the same reviewed wording. They are not identical in appearance: `artifact` and `html` are the designed page, and `markdown` is the same content with no styling, since Markdown carries none.
 

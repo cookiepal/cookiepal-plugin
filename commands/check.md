@@ -7,4 +7,4 @@ Follow the cookiepal check-one-page skill to check this page: $ARGUMENTS
 
 If no URL was given, ask which page to check and do nothing else.
 
-The argument may also name where the read should go: `artifact` (publish a page), `html` (a local page to open in a browser), `markdown` (a local `.md` file) or `terminal` (print it and write nothing). Any of those on its own, with no URL, sets the default for later checks. Choosing `artifact` either way is not consent to publish: the skill still asks once before the first publish.
+The argument may also name where the read should go: `artifact` (publish a page), `html` (a local page to open in a browser), `markdown` (a local `.md` file) or `terminal` (print it here). Every check writes the read to its three files whichever form is picked, `terminal` included. Any of those on its own, with no URL, sets the default for later checks. Choosing `artifact` either way is not consent to publish: the skill still asks once before the first publish.

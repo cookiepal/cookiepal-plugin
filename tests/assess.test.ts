@@ -453,10 +453,9 @@ describe('what reject left behind', () => {
       ['www.google-analytics.com'],
     );
 
-  test('every form names the cookies and hosts, which the arrival inventory does not hold', () => {
+  test('every file names the cookies and hosts, which the arrival inventory does not hold', () => {
     const assessment = assess(raw());
     for (const [form, text] of [
-      ['terminal', renderTerminal(assessment)],
       ['markdown', renderMarkdownDocument(assessment)],
       ['artifact', renderReport(assessment)],
       ['html', renderDocument(assessment)],
@@ -465,6 +464,25 @@ describe('what reject left behind', () => {
       for (const name of ['_ga', '_gid', 'www.google-analytics.com'])
         assert.ok(text.includes(name), `${form}: ${name}`);
     }
+  });
+
+  // The terminal reads them by vendor, as it does the arrival, and says where the rows are.
+  test('the terminal groups them by vendor, names the hosts and points to the files for the rows', () => {
+    const text = renderTerminal(assess(raw()));
+    assert.match(text, /\| Vendor \| Cookies \|/);
+    assert.match(text, /listed in full in the HTML and Markdown read/);
+    assert.ok(text.includes('www.google-analytics.com'));
+  });
+
+  test('a reject that leaves 78 cookies behind prints a vendor table, not 78 rows', () => {
+    const many = Array.from({ length: 78 }, (_, index) => cookie(`_ga_${index}`, 'analytics'));
+    const assessment = assess(afterReject(many, []));
+    const terminal = renderTerminal(assessment);
+    // As Markdown writes the name: `_` is escaped so a name cannot style the text around it.
+    const lastRow = '\\_ga\\_77';
+    assert.ok(!terminal.includes(lastRow), 'the terminal printed every row');
+    assert.match(terminal, /\| Vendor \| Cookies \|/);
+    assert.ok(renderMarkdownDocument(assessment).includes(lastRow), 'the file dropped a row');
   });
 
   test('the page does not send them to the arrival inventory', () => {
