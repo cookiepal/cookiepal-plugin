@@ -26,7 +26,11 @@ import { prepareUrl } from './url.ts';
  * Plans and targets are used once. A result is not: it is only the check's own
  * output coming back, so re-reading it replays nothing, and `assess` can be run
  * again without starting the check over. Everything past the server's 30-minute
- * plan window is ignored and deleted.
+ * plan window is ignored and deleted, except the rendered reads: those are the
+ * user's own copy, so the newest `KEPT_REPORTS` are kept whatever their age.
+ *
+ * Every folder is created 0700 and every file 0600, since they hold the pages
+ * checked and what was found on them.
  */
 
 const PLANS = 'plans';
@@ -37,6 +41,9 @@ const SNIPPETS = 'snippets';
 const EVIDENCE = 'evidence';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_AGE_MS = 30 * 60 * 1000;
+/** How many checks' rendered reads are kept. Older ones are deleted on the next sweep. */
+export const KEPT_REPORTS = 20;
+const PRIVATE_DIR = { recursive: true, mode: 0o700 } as const;
 
 export interface SavedPlan {
   /** The URL Claude sent to `plan_check`. */
@@ -46,7 +53,7 @@ export interface SavedPlan {
   savedAt: number;
 }
 
-const isCheckId = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
+export const isCheckId = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -93,10 +100,7 @@ const liveFiles = (dir: string): string[] => {
   for (const name of names) {
     const path = join(dir, name);
     try {
-      // `recursive` because `reports/` holds one directory per check, not files:
-      // without it rmSync throws EISDIR, the catch below swallows it, and the
-      // rendered reads are never swept.
-      if (isExpired(path)) rmSync(path, { recursive: true, force: true });
+      if (isExpired(path)) rmSync(path, { force: true });
       else live.push({ path, mtime: statSync(path).mtimeMs });
     } catch {}
   }
@@ -104,7 +108,7 @@ const liveFiles = (dir: string): string[] => {
 };
 
 const write = (dir: string, name: string, value: unknown) => {
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, PRIVATE_DIR);
   liveFiles(dir);
   writeFileSync(join(dir, name), JSON.stringify(value), { mode: 0o600 });
 };
@@ -154,22 +158,47 @@ export const takePlanFor = (dataDir: string, page: string, notBefore: number): S
   return null;
 };
 
-/** Deletes every saved plan, URL, result and report past the 30-minute window, so nothing lingers. */
+/** The rendered reads past the newest `KEPT_REPORTS`, deleted. Each check has its own folder. */
+const trimReports = (dir: string) => {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  const folders = names.flatMap((name) => {
+    try {
+      return [{ path: join(dir, name), mtime: statSync(join(dir, name)).mtimeMs }];
+    } catch {
+      return [];
+    }
+  });
+  folders.sort((a, b) => b.mtime - a.mtime);
+  for (const { path } of folders.slice(KEPT_REPORTS)) rmSync(path, { recursive: true, force: true });
+};
+
+/** Deletes every saved plan, URL and result past the 30-minute window, and all but the newest reports. */
 export const sweep = (dataDir: string): void => {
   liveFiles(join(dataDir, PLANS));
   liveFiles(join(dataDir, TARGETS));
   liveFiles(join(dataDir, RESULTS));
-  liveFiles(join(dataDir, REPORTS));
+  trimReports(join(dataDir, REPORTS));
   liveFiles(join(dataDir, SNIPPETS));
   liveFiles(join(dataDir, EVIDENCE));
 };
 
-/** Stores the `submit_check` result from a PostToolUse payload, under its own check ID. */
+/**
+ * Stores the `submit_check` result from a PostToolUse payload, under the check
+ * ID that was submitted, which is the one the skill later asks `assess` for. A
+ * response naming a different check is not stored at all.
+ */
 export const saveResult = (dataDir: string, payload: unknown): boolean => {
-  if (!isRecord(payload)) return false;
+  if (!isRecord(payload) || !isRecord(payload.tool_input)) return false;
+  const { checkId } = payload.tool_input;
   const result = resultFrom(payload.tool_response);
-  if (!result || !isCheckId(result.checkId)) return false;
-  write(join(dataDir, RESULTS), `${result.checkId}.json`, result);
+  if (!result || !isCheckId(checkId)) return false;
+  if (result.checkId !== undefined && result.checkId !== checkId) return false;
+  write(join(dataDir, RESULTS), `${checkId}.json`, result);
   return true;
 };
 
@@ -194,8 +223,8 @@ export const readResult = (dataDir: string, checkId: string): Record<string, unk
 
 /**
  * Writes one rendered form of the read next to the result and returns its path,
- * so the bytes never pass through the model on their way to being published or
- * opened. Every form is written on each run, whichever the user asked for:
+ * so what is published or opened is the rendered file, not a copy the model
+ * retyped. Every form is written on each run, whichever the user asked for:
  * falling back from one to the next is then only a matter of naming a different
  * path, with nothing to re-render and no second browser run.
  */
@@ -203,7 +232,7 @@ export const writeRendered = (dataDir: string, checkId: string, name: string, co
   if (!isCheckId(checkId) || !/^[a-z]+\.[a-z]+$/.test(name)) return null;
   const dir = join(dataDir, REPORTS, checkId);
   try {
-    mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, PRIVATE_DIR);
     const path = join(dir, name);
     writeFileSync(path, content, { mode: 0o600 });
     return path;
