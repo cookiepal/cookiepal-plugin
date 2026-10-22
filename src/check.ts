@@ -13,7 +13,7 @@ import {
   recordLinkAnswer,
   share,
 } from './consent.ts';
-import { GCM_READING_EXPRESSION, parseGcmReading } from './gcm.ts';
+import { GCM_READING_EXPRESSION, gcmDecision, parseGcmReading } from './gcm.ts';
 import { findTagExpression, NOT_FOUND, parseFoundTag, verifyDecision } from './install.ts';
 import { renderInventory, renderMarkdownDocument, renderTerminal } from './markdown.ts';
 import { fallbacksFor, OUTPUT_MODES, readOutput, setOutput } from './output.ts';
@@ -30,6 +30,7 @@ import {
   readTarget,
   resultFrom,
   saveEvidence,
+  saveGcmReading,
   savePlan,
   saveResult,
   saveScan,
@@ -68,6 +69,7 @@ import { prepareUrl } from './url.ts';
  *   scan status <scanId>          → the crawl's progress, or its finished result for upload_scan_report
  *   guard-upload stdin: hook JSON → the PreToolUse hook on upload_scan_report refuses a report scan status never produced
  *   gcm stdin: the URL            → loads the page and returns the exact check_gcm_status reading
+ *   guard-gcm stdin: hook JSON    → the PreToolUse hook on check_gcm_status refuses a reading no local run produced
  *
  * The URL comes on stdin, so it never passes through shell quoting. Nothing from
  * the page or the server is ever put in a command: `ref` is a UUID this script
@@ -688,6 +690,7 @@ const GCM_TIMEOUT_MS = 20_000;
  * `reading` argument `check_gcm_status` takes.
  */
 const gcmCheck = async (): Promise<Output> => {
+  if (!dataDir) return NO_DATA_DIR;
   const raw = (await readStdin()).trim();
   if (!raw) return { ok: false, error: 'Which page should I check? Give its URL.' };
   const prepared = prepareUrl(raw);
@@ -714,12 +717,9 @@ const gcmCheck = async (): Promise<Output> => {
     return { ok: false, error: error instanceof CheckError ? error.message : 'The page could not be loaded.' };
   }
 
-  return {
-    ok: true,
-    url: prepared.page,
-    seenAt: new Date().toISOString(),
-    reading: parseGcmReading(load.inspected),
-  };
+  const run = { url: prepared.page, seenAt: new Date().toISOString(), reading: parseGcmReading(load.inspected) };
+  saveGcmReading(dataDir, new URL(prepared.page).hostname, run);
+  return { ok: true, ...run };
 };
 
 const main = async (): Promise<Output> => {
@@ -748,7 +748,7 @@ const main = async (): Promise<Output> => {
           'Usage: check.mjs prepare | consent share|decline [--anyway]|status|link yes|no | run <ref> | ' +
           'verify <ref> | assess <checkId> [inventory] | output artifact|html|markdown|terminal | ' +
           'scan status <scanId> | gcm | save-plan | save-result | save-snippet | save-scan | ' +
-          'save-forgotten | guard-plan | guard-connect | guard-verify | guard-upload',
+          'save-forgotten | guard-plan | guard-connect | guard-verify | guard-upload | guard-gcm',
       };
   }
 };
@@ -833,6 +833,22 @@ const guardVerify = async () => {
   if (verifyDecision(dataDir, input) === 'deny') deny(VERIFY_GUARD_REASON);
 };
 
+export const GCM_GUARD_REASON =
+  'check_gcm_status takes only the reading a local Consent Mode check produced. Run the gcm step for the ' +
+  "page and send its `url`, `seenAt` and `reading` unchanged: the verdict sets the domain's Consent Mode " +
+  'status in CookiePal, so it must come from a real reading.';
+
+const guardGcm = async () => {
+  let input: unknown;
+  try {
+    input = JSON.parse(await readStdin())?.tool_input;
+  } catch {
+    deny(GCM_GUARD_REASON);
+    return;
+  }
+  if (gcmDecision(dataDir, input) === 'deny') deny(GCM_GUARD_REASON);
+};
+
 const guardUpload = async () => {
   let input: unknown;
   try {
@@ -892,6 +908,8 @@ if (process.argv[2] === 'save-plan') {
   guardVerify();
 } else if (process.argv[2] === 'guard-upload') {
   guardUpload();
+} else if (process.argv[2] === 'guard-gcm') {
+  guardGcm();
 } else {
   main()
     .catch(

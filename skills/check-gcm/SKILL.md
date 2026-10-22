@@ -33,7 +33,7 @@ Use a page that loads the domain's Google tag — its home page unless the user 
 
 ### 2. Judge it
 
-Call `check_gcm_status` with the `domainId` the user named (or none, for the account's default domain), the `url` and `reading` **exactly as step 1 returned them**. Never edit a field or assemble a reading yourself: the verdict is the server's, from a real reading, not an inference.
+Call `check_gcm_status` with the `domainId` the user named (or none, for the account's default domain), the `url`, `seenAt` and `reading` **exactly as step 1 returned them**. Never edit a field or assemble a reading yourself: the verdict is the server's, from a real reading, not an inference, and a reading step 1 did not produce is refused before it is sent.
 
 ### 3. Report
 

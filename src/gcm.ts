@@ -7,6 +7,8 @@
  */
 
 import { GCM_READING_EXPRESSION } from '@cookiepal-oss/integrations';
+import { readGcmReading } from './savedPlans.ts';
+import { stableStringify } from './scanGuard.ts';
 
 export { GCM_READING_EXPRESSION };
 
@@ -51,4 +53,25 @@ export const parseGcmReading = (value: unknown): GcmReading => {
     entriesMissingDefault: entriesOf(value.entriesMissingDefault),
     wasSetLate: value.wasSetLate === true,
   };
+};
+
+/**
+ * Refuses a `check_gcm_status` call whose `url`, `seenAt` and `reading` are not
+ * what a local `gcm` run produced, since the verdict sets the domain's Consent
+ * Mode status in CookiePal. The same posture `verifyDecision` takes toward an
+ * install reading: fails closed, and a reading assembled by hand is refused.
+ */
+export const gcmDecision = (dir: string | null, input: unknown): 'allow' | 'deny' => {
+  if (!dir || !isRecord(input) || typeof input.url !== 'string') return 'deny';
+  let host: string;
+  try {
+    host = new URL(input.url).hostname;
+  } catch {
+    return 'deny';
+  }
+
+  const saved = readGcmReading(dir, host);
+  if (!saved) return 'deny';
+  const fields = ['url', 'seenAt', 'reading'] as const;
+  return fields.every((field) => stableStringify(input[field]) === stableStringify(saved[field])) ? 'allow' : 'deny';
 };

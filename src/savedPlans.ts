@@ -37,6 +37,7 @@ const SNIPPETS = 'snippets';
 const EVIDENCE = 'evidence';
 const SCANS = 'scans';
 const SCAN_PROGRESS = 'scan-progress';
+const GCM_READINGS = 'gcm-readings';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_AGE_MS = 30 * 60 * 1000;
 
@@ -166,6 +167,7 @@ export const sweep = (dataDir: string): void => {
   liveFiles(join(dataDir, EVIDENCE));
   liveFiles(join(dataDir, SCANS));
   liveFiles(join(dataDir, SCAN_PROGRESS));
+  liveFiles(join(dataDir, GCM_READINGS));
 };
 
 /** Stores the `submit_check` result from a PostToolUse payload, under its own check ID. */
@@ -296,6 +298,33 @@ export const readEvidence = (dataDir: string, domainId: string): Record<string, 
     }
     const saved: unknown = JSON.parse(readFileSync(path, 'utf8'));
     return isRecord(saved) && isRecord(saved.evidence) ? saved.evidence : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * What a local Consent Mode check read, kept so the PreToolUse hook on
+ * `check_gcm_status` can refuse a reading no local run produced, the way
+ * `saveEvidence` does for `verify_installation`. Keyed by the page's host.
+ */
+export const saveGcmReading = (dataDir: string, host: string, reading: Record<string, unknown>): boolean => {
+  if (!isDomainId(host)) return false;
+  write(join(dataDir, GCM_READINGS), `${host}.json`, { host, reading, savedAt: Date.now() });
+  return true;
+};
+
+/** The reading a local run saved for this host in the last 30 minutes. */
+export const readGcmReading = (dataDir: string, host: string): Record<string, unknown> | null => {
+  if (!isDomainId(host)) return null;
+  const path = join(dataDir, GCM_READINGS, `${host}.json`);
+  try {
+    if (isExpired(path)) {
+      rmSync(path, { force: true });
+      return null;
+    }
+    const saved: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    return isRecord(saved) && isRecord(saved.reading) ? saved.reading : null;
   } catch {
     return null;
   }
