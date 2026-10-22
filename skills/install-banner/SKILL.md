@@ -37,8 +37,7 @@ Follow the `detect-stack` skill.
 
 - **It named more than one candidate** (its ambiguity pre-check fired, or a glob matched several
   files) — stop. Name them, ask which one serves the site's live pages, and change nothing. Do not
-  pick one. The one exception is a stack whose insertion rule names a file the candidates all
-  share, such as Astro's shared head component: that file is the one head file, so carry on.
+  pick one.
 - **It could not name a head file** — run step 3's already-installed check anyway, so you can say
   whether a tag is in the repo somewhere even though the head file is unknown, then stop. There is
   nothing to edit; say why detection failed.

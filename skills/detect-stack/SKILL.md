@@ -29,15 +29,16 @@ Never skip a row, and never decide from a directory name or a file extension alo
 ### 3. Resolve the head file
 
 **First, run the ambiguity pre-check** for that stack, if the "Ambiguity pre-checks" table in
-`stacks.md` has a row for it. When a file matches in both of that row's groups, the stack is
-ambiguous: report every matched file and ask the user which one serves the site's live pages. Stop
+`stacks.md` has a row for it. When each of that row's groups matches at least one file, the stack
+is ambiguous: apply "One shared head component is one answer" from `stacks.md`, and if that names
+no file, report every matched file and ask the user which one serves the site's live pages. Stop
 there — do not fall through to the resolution below, which would pick one of them silently.
 
 Otherwise resolve the Head file column: the first glob that matches at least one file.
 
 - **Exactly one match** — that is the head file.
-- **More than one match** — list every match and ask the user which one the site's live pages use.
-  Do not guess between them.
+- **More than one match** — apply the same shared head component rule. If it names no file, list
+  every match and ask the user which one the site's live pages use. Do not guess between them.
 - **No match** — say the head file could not be found for this stack, name the globs that were
   tried, and stop.
 

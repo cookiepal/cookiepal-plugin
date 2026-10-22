@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { globSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, test } from 'node:test';
 
 const root = join(import.meta.dirname, '..');
@@ -101,22 +101,41 @@ const resolveHead = (dir: string, headFile: string): string[] => {
   return [];
 };
 
+/**
+ * The file every candidate imports the first child of its `<head>` from, when that is the
+ * same file for all of them. `<head(?:\s[^>]*)?>` and not `<head`, which `<header>` starts with.
+ */
+const sharedHead = (dir: string, files: string[]): string | null => {
+  const sources = files.map((file) => {
+    const text = readFileSync(join(dir, file), 'utf8');
+    const component = text.match(/<head(?:\s[^>]*)?>\s*<([A-Z][\w.]*)/)?.[1];
+    if (!component) return null;
+    const from = text.match(new RegExp(`import\\s+${component}\\s+from\\s+['"]([^'"]+)['"]`))?.[1];
+    return from ? join(dirname(file), from) : null;
+  });
+  return sources[0] && sources.every((source) => source === sources[0]) ? sources[0] : null;
+};
+
 const detect = (dir: string, rules: Rule[], preChecks: Map<number, [string, string]>) => {
   const rule = rules.find((candidate) => signalsHold(dir, candidate.signals));
   if (!rule) return null;
+
+  // Several candidates that all open their <head> with one component are one answer, not a question.
+  const resolved = (headFiles: string[]) => {
+    const shared = headFiles.length > 1 ? sharedHead(dir, headFiles) : null;
+    if (shared) return { stack: rule.stack, headFiles: [shared], ambiguous: false };
+    return { stack: rule.stack, headFiles, ambiguous: headFiles.length > 1 };
+  };
 
   // The pre-check runs first: first-glob-wins would otherwise silently answer a
   // question with two real answers, picking whichever group sits further left.
   const groups = preChecks.get(rule.order);
   if (groups) {
     const [a, b] = groups.map((group) => matchGroup(dir, group));
-    if (a.length > 0 && b.length > 0) {
-      return { stack: rule.stack, headFiles: [...a, ...b].sort(), ambiguous: true };
-    }
+    if (a.length > 0 && b.length > 0) return resolved([...a, ...b].sort());
   }
 
-  const headFiles = resolveHead(dir, rule.headFile);
-  return { stack: rule.stack, headFiles, ambiguous: headFiles.length > 1 };
+  return resolved(resolveHead(dir, rule.headFile));
 };
 
 /**
@@ -319,6 +338,11 @@ describe('the skills that act on the rules', () => {
   // picks the leftmost file unless the skill is told to run the pre-check first.
   test('detect-stack tells the model to run the ambiguity pre-check', () => {
     assert.match(detectSkill, /Ambiguity pre-checks/);
+  });
+
+  // The suite resolves a shared head component before it reports ambiguity, so the skill must too.
+  test('detect-stack checks for a shared head component before it asks', () => {
+    assert.match(detectSkill, /One shared head component is one answer/);
   });
 
   test('detect-stack names the fallback by position, not a row number that can shift', () => {

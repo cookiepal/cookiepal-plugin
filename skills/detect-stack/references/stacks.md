@@ -36,9 +36,9 @@ somewhere else.
 
 ## Ambiguity pre-checks
 
-Run these **before** resolving a row's Head file column. Each row names two groups of globs. If a
-file matches in **both** groups, the stack is ambiguous: report every matched file and ask the user
-which one serves the site's live pages. Never pick one yourself.
+Run these **before** resolving a row's Head file column. Each row names two groups of globs. If
+**each** group matches at least one file, the stack is ambiguous: report every matched file and ask
+the user which one serves the site's live pages. Never pick one yourself.
 
 Without this, first-glob-wins would silently answer a question that has two real answers — the
 groups below are exactly the globs that sit in one ordered `OR` list in the table above, where only
@@ -56,6 +56,15 @@ starter a layout and two pages each hold their own `<head>`, and first-glob-wins
 in the layout alone, leaving the home page without a banner. Row 8's variants
 (`index.html`, `public/index.html`, a template directory) are different conventions, not rival
 entry points in one repo, so first-glob-wins is the answer there rather than a question.
+
+### One shared head component is one answer
+
+Before asking, whether a pre-check fired or one glob matched several files, read the first child of
+each candidate's `<head>`. If it is the same component in every candidate, imported from the same
+file, that file is the head file and there is nothing to ask. On the Astro blog starter every
+`<head>` starts with `<BaseHead />` from `src/components/BaseHead.astro`, so the tag goes there and
+reaches every page. Two components with the same name imported from different files are not
+shared.
 
 ## Per-stack insertion rules
 
@@ -145,11 +154,9 @@ Head file: the one `.astro` file under `src/layouts/` or `src/pages/` whose cont
 Without `is:inline`, Astro processes, bundles and may reorder the script, which loses the early
 execution the banner needs.
 
-If more than one file contains `<head>`, read the first child of each one's `<head>`. When it is the
-same component in all of them (the blog starter's `<BaseHead />`, from
-`src/components/BaseHead.astro`), that component is the head file: insert the tag as its first
-element, after its frontmatter, and edit nothing else. Otherwise list the files and ask the user
-which one the site's pages use — do not edit more than one.
+When the head file is a shared head component (see "One shared head component is one answer"), it
+has no `<head>` of its own: insert the tag as its first element, after its frontmatter and any
+leading comment, and edit nothing else.
 
 ### 5. SvelteKit
 
