@@ -1,0 +1,10 @@
+{
+  "stack": "Astro",
+  "headFiles": [
+    "src/layouts/BlogPost.astro",
+    "src/pages/blog/index.astro",
+    "src/pages/index.astro"
+  ],
+  "ambiguous": true,
+  "installState": "none"
+}

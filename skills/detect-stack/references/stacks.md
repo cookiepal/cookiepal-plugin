@@ -46,10 +46,13 @@ the leftmost could ever win.
 | # | Stack | Group A | Group B |
 | --- | --- | --- | --- |
 | 2 | Next.js | `app/layout.tsx OR app/layout.jsx OR app/layout.ts OR app/layout.js OR src/app/layout.tsx OR src/app/layout.jsx OR src/app/layout.ts OR src/app/layout.js` | `pages/_document.tsx OR pages/_document.jsx OR pages/_document.ts OR pages/_document.js OR src/pages/_document.tsx OR src/pages/_document.jsx OR src/pages/_document.ts OR src/pages/_document.js` |
+| 4 | Astro | `src/layouts/**/*.astro#has:<head` | `src/pages/**/*.astro#has:<head` |
 
-A row needs an entry here when two of its head files could legitimately coexist and only the
-leftmost would ever win. A row whose globs use `**` does not: one `**` glob can already return
-several files, so the "more than one match → ask" branch reaches it on its own. Row 8's variants
+A row needs an entry here when files from two of its globs could both serve live pages and only the
+leftmost would ever win. Inside one `**` glob that cannot happen: it already returns several files,
+so the "more than one match → ask" branch reaches them. Across globs it can — on the Astro blog
+starter a layout and two pages each hold their own `<head>`, and first-glob-wins would put the tag
+in the layout alone, leaving the home page without a banner. Row 8's variants
 (`index.html`, `public/index.html`, a template directory) are different conventions, not rival
 entry points in one repo, so first-glob-wins is the answer there rather than a question.
 
@@ -131,16 +134,21 @@ not.
 
 ### 4. Astro
 
-Head file: the one layout `.astro` file whose contents contain `<head`. Insert as the first child
-of `<head>`, **with `is:inline`**:
+Head file: the one `.astro` file under `src/layouts/` or `src/pages/` whose contents contain
+`<head`. Insert as the first child of `<head>`, **with `is:inline`**:
 
 ```astro
 <script is:inline id="cookiepal" src="SRC"></script>
 ```
 
 Without `is:inline`, Astro processes, bundles and may reorder the script, which loses the early
-execution the banner needs. If more than one layout file contains `<head>`, list them and ask the
-user which one the site's pages use — do not edit more than one.
+execution the banner needs.
+
+If more than one file contains `<head>`, read the first child of each one's `<head>`. When it is the
+same component in all of them (the blog starter's `<BaseHead />`, from
+`src/components/BaseHead.astro`), that component is the head file: insert the tag as its first
+element, after its frontmatter, and edit nothing else. Otherwise list the files and ask the user
+which one the site's pages use — do not edit more than one.
 
 ### 5. SvelteKit
 
