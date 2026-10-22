@@ -863,6 +863,13 @@ var LOCATE = function locate(banner, buttons, matchers) {
     const { position } = getComputedStyle(element);
     return position === "fixed" || position === "sticky" || element.matches("dialog, [role=dialog], [role=alertdialog], [aria-modal=true]");
   };
+  const landmark = (element) => {
+    if (!element.matches("main, header, nav, [role=main], [role=banner], [role=navigation]")) return false;
+    for (let up = element.parentElement; up && up !== document.body; up = up.parentElement) {
+      if (boundary(up)) return false;
+    }
+    return true;
+  };
   const roots = [];
   for (const id of banner.ids) {
     const found = document.getElementById(id);
@@ -898,7 +905,7 @@ var LOCATE = function locate(banner, buttons, matchers) {
     descend(document.body);
     for (const holder of holders) {
       for (let box = holder; box && box !== document.body; box = box.parentElement) {
-        if (box.getBoundingClientRect().height > innerHeight) break;
+        if (landmark(box) || box.getBoundingClientRect().height > innerHeight) break;
         if ([...box.querySelectorAll(CLICKABLE)].some(consentButton)) {
           if (!roots.includes(box)) roots.push(box);
           break;

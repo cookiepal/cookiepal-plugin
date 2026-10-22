@@ -140,6 +140,39 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
        </main>`,
     ),
   }),
+  // No banner, and the page fits the screen: no box is taller than it, so only `main` stops the climb.
+  '/keyword-short-page': () => ({
+    body: banner(
+      'keyword-short-page',
+      `<div id="root">
+         <main>
+           <section><h1>Fresh bread</h1><p>We use cookies to remember your basket.</p></section>
+           <form><p>Pending invitations</p><button type="button" onclick="reject()">Reject all</button></form>
+         </main>
+       </div>`,
+    ),
+  }),
+  // No banner, and `main` scrolls inside a 100vh shell, so no box is taller than the screen either.
+  '/keyword-shell': () => ({
+    body: banner(
+      'keyword-shell',
+      `<div id="root" style="height:100vh;display:flex;flex-direction:column">
+         <header><nav><a href="#">Shop</a></nav></header>
+         <main style="flex:1;overflow:auto">
+           <section><h1>Fresh bread</h1><p>We use cookies to remember your basket.</p></section>
+           <div style="height:3000px"></div>
+           <form><p>Pending invitations</p><button type="button" onclick="reject()">Reject all</button></form>
+         </main>
+       </div>`,
+    ),
+  }),
+  // A fixed banner with a <header> of its own: that header is the banner's, so the climb goes past it.
+  '/keyword-banner-header': () => ({
+    body: banner(
+      'keyword-banner-header',
+      `<div style="position:fixed;bottom:0"><header><p>We use cookies.</p></header>${TEXT_BUTTONS}</div>`,
+    ),
+  }),
   // A fixed bar holding the keyword and only a "Learn more": the climb stops at the bar, not at the "Reject all" past it.
   '/keyword-fixed': () => ({
     body: banner(
@@ -800,6 +833,27 @@ describe('the consent action', () => {
     assert.equal(consent?.bannerFound, true);
     assert.equal(consent?.reject.pressed, false);
     assert.equal(consent?.reject.reason, 'no-button');
+  });
+
+  for (const [path, layout] of [
+    ['/keyword-short-page', 'a page that fits the screen'],
+    ['/keyword-shell', 'a main that scrolls inside a 100vh shell'],
+  ]) {
+    test(`keyword text in a hero stops at main on ${layout}`, async () => {
+      const { output } = await withConsent(path);
+      const consent = output.submit.consent;
+
+      assert.equal(consent?.reject.pressed, false);
+      assert.equal(consent?.reject.reason, 'no-button');
+    });
+  }
+
+  test('a header inside a fixed banner is part of the banner, not the page', async () => {
+    const { output } = await withConsent('/keyword-banner-header', BANNER_TEXT_ONLY);
+    const consent = output.submit.consent;
+
+    assert.equal(consent?.accept.pressed, true);
+    assert.equal(consent?.reject.pressed, true);
   });
 
   test('the search from a keyword stops at a fixed box', async () => {
