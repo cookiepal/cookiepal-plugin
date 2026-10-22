@@ -131,7 +131,7 @@ Every sentence it prints about a law is fixed text that ships with the plugin an
 /cookiepal:check https://example.com terminal    # straight to your terminal
 ```
 
-Same words every time. Only the styling differs. Publishing uploads the page checked, every cookie name and every third-party host to claude.ai, so before publishing anything the first check asks whether to; **the default is no**, which keeps the read in a local HTML file, and your answer is remembered. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. The HTML and `.md` files for your last 20 checks are kept in the plugin's data folder. Set one as your default if you would rather artifacts were never used: `/cookiepal:check html`, with no URL, makes the local HTML file the default.
+Same words every time. Only the styling differs. Publishing uploads the page checked, every cookie name and every third-party host to claude.ai, so before publishing anything the first check asks whether to; **the default is no**, which keeps the read in a local HTML file, and your answer is remembered. Artifacts need a signed-in claude.ai account on a paid plan; the other three work on any plan and **send the read nowhere at all**. Whichever form you pick, `terminal` included, every check writes the read to its HTML and `.md` files in the plugin's data folder, and the files for your last 20 checks are kept there. When a lot is left after reject, the terminal reads it by vendor, as it does the arrival, with every cookie listed in those files. Set one as your default if you would rather artifacts were never used: `/cookiepal:check html`, with no URL, makes the local HTML file the default.
 
 ### 👆 It only ever clicks one button per run
 
@@ -153,7 +153,7 @@ Only what it takes to count checks and store the result:
 - the **country** the check ran from, worked out from your IP address, which is **not stored**;
 - a **random install ID**, only if you agreed to share one.
 
-One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check stop-sharing` sends the install ID twice more, on its own, so the checks stored under it can be erased. Nothing else accompanies it.
+One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check stop-sharing` sends the install ID twice more, on its own, so the checks stored under it can be erased, and a third time if the first two came too close together. Nothing else accompanies it.
 
 **The page is loaded by you, on your machine. CookiePal never loads it.** Cookies are categorised locally against the open-source [`@cookiepal-oss/cookie-db`](https://www.npmjs.com/package/@cookiepal-oss/cookie-db) catalogue, so nothing is sent anywhere to be identified. The risk read is assembled locally too.
 
@@ -173,7 +173,7 @@ To stop sharing it and delete it:
 /cookiepal:check stop-sharing
 ```
 
-That also deletes the checks you already submitted: the plugin sends the ID to CookiePal one last time and, once the server confirms every check stored under it is gone, removes the ID from this machine. You are told how many went.
+That also deletes the checks you already submitted: the plugin sends the ID to CookiePal twice, a few seconds apart, because a check stored just before can be missed by the first run, and a third time if the two came too close together. Once two of those runs, far enough apart, both confirm nothing is left under it, the plugin removes the ID from this machine. You are told how many went.
 
 If the erasure does not go through, sharing still stops: the ID is never sent with a check again. It stays on this machine only because it is the only thing that can find those checks, so running the command again is safe, because it deletes only what is left, and you can also send the ID to [support@cookiepal.io](mailto:support@cookiepal.io) to have them erased. If the ID is already gone from this machine but you kept a copy, send it to [support@cookiepal.io](mailto:support@cookiepal.io) and we will erase anything left under it.
 

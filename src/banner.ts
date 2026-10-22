@@ -117,6 +117,19 @@ const LOCATE = function locate(
     );
   };
 
+  /**
+   * Where the page lays itself out. Past one, keyword text in a hero reaches the page's own
+   * buttons even on a page that fits the screen, or whose `main` scrolls inside a 100vh shell.
+   * A `<header>` or `<nav>` inside a banner's own box is part of the banner, so it does not count.
+   */
+  const landmark = (element: Element): boolean => {
+    if (!element.matches('main, header, nav, [role=main], [role=banner], [role=navigation]')) return false;
+    for (let up = element.parentElement; up && up !== document.body; up = up.parentElement) {
+      if (boundary(up)) return false;
+    }
+    return true;
+  };
+
   /** The banner, or, when only a body keyword said there was one, the boxes around that keyword. */
   const roots: Element[] = [];
   for (const id of banner.ids) {
@@ -144,8 +157,9 @@ const LOCATE = function locate(
   // element holding it is climbed to the nearest box with an accept or reject
   // button in it, and only those boxes are searched, so an "Accept" elsewhere is
   // never pressed. The climb gives up at a fixed, sticky or dialog box, which is
-  // where a banner ends, and at a box taller than the screen, which is the page:
-  // past that, keyword text in a hero would reach an unrelated "Decline".
+  // where a banner ends, and at the page itself: a `main`, `header` or `nav`, or
+  // a box taller than the screen. Past those, keyword text in a hero would reach
+  // an unrelated "Decline".
   if (!roots.length && bannerFound && document.body) {
     const holds = (element: Element) =>
       !element.matches(SKIP) &&
@@ -164,7 +178,7 @@ const LOCATE = function locate(
 
     for (const holder of holders) {
       for (let box: Element | null = holder; box && box !== document.body; box = box.parentElement) {
-        if (box.getBoundingClientRect().height > innerHeight) break;
+        if (landmark(box) || box.getBoundingClientRect().height > innerHeight) break;
         if ([...box.querySelectorAll(CLICKABLE)].some(consentButton)) {
           if (!roots.includes(box)) roots.push(box);
           break;

@@ -8998,6 +8998,15 @@ var group = (labels2) => {
   }
   return [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 };
+var byVendor = (known) => {
+  const identifiable = group(known.map(({ name }) => categorise(name).vendor));
+  const unattributed = known.filter(({ name }) => !categorise(name).vendor).length;
+  return {
+    groups: [...identifiable, ...unattributed > 0 ? [{ label: NO_VENDOR, count: unattributed }] : []],
+    identifiable: identifiable.length
+  };
+};
+var VENDOR_LABEL = { of: "Vendor", unit: "Cookies" };
 var finding = (kind, title, detail, cookies2, hosts, extra = {}) => ({
   kind,
   title,
@@ -9059,9 +9068,7 @@ var assess = (raw) => {
   const unknownAfterReject = afterRejectAll.filter((cookie) => !isKnown(cookie));
   const unknownOnlyAfterReject = unknownAfterReject.filter((cookie) => !arrived.has(cookieKey(cookie)));
   if (tracking.length > 0) {
-    const identifiable = group(tracking.map(({ name }) => categorise(name).vendor));
-    const unattributed = tracking.filter(({ name }) => !categorise(name).vendor).length;
-    const vendors = [...identifiable, ...unattributed > 0 ? [{ label: NO_VENDOR, count: unattributed }] : []];
+    const vendors = byVendor(tracking);
     const domains = new Set(tracking.map(({ domain }) => domain)).size;
     findings.push(
       finding(
@@ -9071,9 +9078,9 @@ var assess = (raw) => {
         tracking,
         [],
         {
-          groups: vendors,
-          groupLabel: { of: "Vendor", unit: "Cookies" },
-          shape: (identifiable.length > 0 ? `From ${plural(identifiable.length, "identifiable vendor")}, across ${plural(domains, "cookie domain")}.` : `Across ${plural(domains, "cookie domain")}. The catalogue names no vendor for any of them.`) + // Says where the unknown ones went, so they are not read as left out.
+          groups: vendors.groups,
+          groupLabel: VENDOR_LABEL,
+          shape: (vendors.identifiable > 0 ? `From ${plural(vendors.identifiable, "identifiable vendor")}, across ${plural(domains, "cookie domain")}.` : `Across ${plural(domains, "cookie domain")}. The catalogue names no vendor for any of them.`) + // Says where the unknown ones went, so they are not read as left out.
           (unidentified.length > 0 ? ` Another ${unidentified.length} the catalogue does not know ${unidentified.length === 1 ? "is" : "are"} counted under the next finding.` : "")
         }
       )
@@ -9130,7 +9137,12 @@ var assess = (raw) => {
         `After the check pressed the banner\u2019s reject button, ${notNecessaryPhrase(surviving.length)}${describe(surviving)} ${was(surviving.length)} still set.`,
         surviving,
         [],
-        { listed: { cookies: surviving }, ...pointToUnknown() }
+        {
+          groups: byVendor(surviving).groups,
+          groupLabel: VENDOR_LABEL,
+          listed: { cookies: surviving },
+          ...pointToUnknown()
+        }
       )
     );
   }
@@ -9143,7 +9155,12 @@ var assess = (raw) => {
         `${notNecessaryPhrase(addedAfterReject.length)} appeared only after the reject button was pressed${describe(addedAfterReject)}.`,
         addedAfterReject,
         [],
-        { listed: { cookies: addedAfterReject }, ...pointToUnknown() }
+        {
+          groups: byVendor(addedAfterReject).groups,
+          groupLabel: VENDOR_LABEL,
+          listed: { cookies: addedAfterReject },
+          ...pointToUnknown()
+        }
       )
     );
   }
@@ -9250,6 +9267,13 @@ var LOCATE = function locate(banner, buttons, matchers) {
     const { position } = getComputedStyle(element);
     return position === "fixed" || position === "sticky" || element.matches("dialog, [role=dialog], [role=alertdialog], [aria-modal=true]");
   };
+  const landmark = (element) => {
+    if (!element.matches("main, header, nav, [role=main], [role=banner], [role=navigation]")) return false;
+    for (let up = element.parentElement; up && up !== document.body; up = up.parentElement) {
+      if (boundary(up)) return false;
+    }
+    return true;
+  };
   const roots = [];
   for (const id of banner.ids) {
     const found = document.getElementById(id);
@@ -9285,7 +9309,7 @@ var LOCATE = function locate(banner, buttons, matchers) {
     descend(document.body);
     for (const holder of holders) {
       for (let box = holder; box && box !== document.body; box = box.parentElement) {
-        if (box.getBoundingClientRect().height > innerHeight) break;
+        if (landmark(box) || box.getBoundingClientRect().height > innerHeight) break;
         if ([...box.querySelectorAll(CLICKABLE)].some(consentButton)) {
           if (!roots.includes(box)) roots.push(box);
           break;
@@ -9842,17 +9866,19 @@ var hostTable = (hosts) => [
   "| --- | --- |",
   ...hosts.map(({ host, domain }) => `| ${cell(host)} | ${cell(domain)} |`)
 ];
-var listedRows = ({ listed }) => {
+var FULL_ROWS_IN_FILES = "_Each cookie is listed in full in the HTML and Markdown read._";
+var listedRows = ({ listed, groups }, complete) => {
   if (listed.cookies.length + listed.hosts.length === 0) return [];
+  const cookieRows = complete || groups.length === 0 ? cookieTable(listed.cookies) : [FULL_ROWS_IN_FILES];
   return [
     "",
     "_Read after the reject button was pressed:_",
-    ...listed.cookies.length > 0 ? ["", ...cookieTable(listed.cookies)] : [],
+    ...listed.cookies.length > 0 ? ["", ...cookieRows] : [],
     ...listed.hosts.length > 0 ? ["", ...hostTable(listed.hosts)] : []
   ];
 };
 var lawLines = (finding2) => [...finding2.byLaw].sort((a, b) => Number(b.applies) - Number(a.applies)).map(({ name, applies, text }) => `- **${name}** \u2014 ${applies ? text : `_Not a finding here._ ${text}`}`);
-var findingBlock = (finding2, index, top) => {
+var findingBlock = (finding2, index, top, complete) => {
   return [
     "",
     `### ${index}. ${finding2.title}`,
@@ -9860,7 +9886,7 @@ var findingBlock = (finding2, index, top) => {
     finding2.detail,
     ...finding2.shape ? ["", `_${finding2.shape}_`] : [],
     ...groupTable(finding2, top),
-    ...listedRows(finding2),
+    ...listedRows(finding2, complete),
     "",
     ...lawLines(finding2)
   ];
@@ -9918,7 +9944,7 @@ var build = (assessment, complete) => {
     const findings = ordered(assessment.findings);
     if (complete) lines.push(...gridTable(findings));
     for (const [index, finding2] of findings.entries()) {
-      lines.push(...findingBlock(finding2, index + 1, top));
+      lines.push(...findingBlock(finding2, index + 1, top, complete));
     }
   }
   if (assessment.notes.length > 0) {
