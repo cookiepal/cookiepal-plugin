@@ -78,25 +78,19 @@ after** that line. If the anchor is not in the file, insert immediately before `
 ### 2a. Next.js, App Router
 
 Head file: `app/layout.tsx`, `app/layout.jsx`, `app/layout.ts`, `app/layout.js`, or the same under
-`src/app/`. Use `next/script`, not a raw tag — a hand-written `<script>` in an App Router layout is
-not injected into `<head>` the way `next/script` is.
-
-Add the import after the file's existing imports, if it is not already there:
+`src/app/`. Insert a raw tag as the first child of `<head>`. If the layout has no `<head>`, add one
+as the first child of `<html>`, above `<body>`:
 
 ```tsx
-import Script from 'next/script';
+<head>
+  {/* eslint-disable-next-line @next/next/no-sync-scripts -- the consent default must run before any other script */}
+  <script id="cookiepal" src="SRC"></script>
+</head>
 ```
 
-Then render the component as the first child of `<body>`, above everything else that is already
-there:
-
-```tsx
-<Script id="cookiepal" src="SRC" strategy="beforeInteractive" />
-```
-
-`beforeInteractive` only takes effect from the **root** layout; it is injected into `<head>`
-wherever the component sits in the tree, and downloads before any Next.js module runs. The `id` is
-required by Next for this strategy. Never hand-write a `<head>` element into an App Router layout.
+Do not use `next/script` with `strategy="beforeInteractive"`: in the App Router, Next appends that
+tag at the end of `<head>`, after its own chunks, so an inline tag manager snippet above it runs
+first and the consent default arrives late. The lint comment follows the rule in 2b.
 
 ### 2b. Next.js, Pages Router
 

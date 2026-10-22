@@ -76,8 +76,8 @@ the `src` from step 2. It has four outcomes:
 
 Apply that stack's insertion rule from
 `${CLAUDE_PLUGIN_ROOT}/skills/detect-stack/references/stacks.md`. Change only the head file identified
-in step 1, and only by adding the tag — plus, for a Next.js App Router repo, the one
-`import Script from 'next/script';` line if it is not already there. Match the file's existing
+in step 1, and only by adding the tag — plus, for Next.js, the lint comment above it, and for an
+App Router layout with no `<head>`, the `<head>` element around it. Match the file's existing
 indentation and quote style. Never reformat the rest of the file, never reorder tags that were
 already there, and never touch any other file.
 
