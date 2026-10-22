@@ -218,6 +218,23 @@ const group = (labels: (string | null)[]): Group[] => {
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 };
 
+/**
+ * Known cookies grouped by the vendor the catalogue names, which is the fact worth
+ * reading when there are more cookies than anyone will read one by one. A cookie
+ * whose category is known but whose vendor is not still has to appear, or the counts
+ * add up to less than the finding says and the table quietly lies.
+ */
+const byVendor = (known: AssessedCookie[]): { groups: Group[]; identifiable: number } => {
+  const identifiable = group(known.map(({ name }) => categorise(name).vendor));
+  const unattributed = known.filter(({ name }) => !categorise(name).vendor).length;
+  return {
+    groups: [...identifiable, ...(unattributed > 0 ? [{ label: NO_VENDOR, count: unattributed }] : [])],
+    identifiable: identifiable.length,
+  };
+};
+
+const VENDOR_LABEL = { of: 'Vendor', unit: 'Cookies' };
+
 /** Builds one finding, with every law's reading of it attached. */
 const finding = (
   kind: FindingKind,
@@ -320,13 +337,7 @@ export const assess = (raw: unknown): Assessment => {
   const unknownAfterReject = afterRejectAll.filter((cookie) => !isKnown(cookie));
   const unknownOnlyAfterReject = unknownAfterReject.filter((cookie) => !arrived.has(cookieKey(cookie)));
   if (tracking.length > 0) {
-    // Grouped by the vendor the catalogue names, which is the fact worth reading
-    // when there are more cookies than anyone will read one by one. A cookie whose
-    // category is known but whose vendor is not still has to appear, or the counts
-    // add up to less than the finding says and the table quietly lies.
-    const identifiable = group(tracking.map(({ name }) => categorise(name).vendor));
-    const unattributed = tracking.filter(({ name }) => !categorise(name).vendor).length;
-    const vendors = [...identifiable, ...(unattributed > 0 ? [{ label: NO_VENDOR, count: unattributed }] : [])];
+    const vendors = byVendor(tracking);
     const domains = new Set(tracking.map(({ domain }) => domain)).size;
     findings.push(
       finding(
@@ -337,11 +348,11 @@ export const assess = (raw: unknown): Assessment => {
         tracking,
         [],
         {
-          groups: vendors,
-          groupLabel: { of: 'Vendor', unit: 'Cookies' },
+          groups: vendors.groups,
+          groupLabel: VENDOR_LABEL,
           shape:
-            (identifiable.length > 0
-              ? `From ${plural(identifiable.length, 'identifiable vendor')}, across ` +
+            (vendors.identifiable > 0
+              ? `From ${plural(vendors.identifiable, 'identifiable vendor')}, across ` +
                 `${plural(domains, 'cookie domain')}.`
               : `Across ${plural(domains, 'cookie domain')}. The catalogue names no vendor for any of them.`) +
             // Says where the unknown ones went, so they are not read as left out.
@@ -435,7 +446,12 @@ export const assess = (raw: unknown): Assessment => {
           `${describe(surviving)} ${was(surviving.length)} still set.`,
         surviving,
         [],
-        { listed: { cookies: surviving }, ...pointToUnknown() },
+        {
+          groups: byVendor(surviving).groups,
+          groupLabel: VENDOR_LABEL,
+          listed: { cookies: surviving },
+          ...pointToUnknown(),
+        },
       ),
     );
   }
@@ -452,7 +468,12 @@ export const assess = (raw: unknown): Assessment => {
           `pressed${describe(addedAfterReject)}.`,
         addedAfterReject,
         [],
-        { listed: { cookies: addedAfterReject }, ...pointToUnknown() },
+        {
+          groups: byVendor(addedAfterReject).groups,
+          groupLabel: VENDOR_LABEL,
+          listed: { cookies: addedAfterReject },
+          ...pointToUnknown(),
+        },
       ),
     );
   }

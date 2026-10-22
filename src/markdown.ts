@@ -76,17 +76,22 @@ const hostTable = (hosts: InventoryHost[]): string[] => [
   ...hosts.map(({ host, domain }) => `| ${cell(host)} | ${cell(domain)} |`),
 ];
 
+const FULL_ROWS_IN_FILES = '_Each cookie is listed in full in the HTML and Markdown read._';
+
 /**
- * The rows a finding read after reject. Printed in the terminal too, unlike the
- * inventory: the inventory is the arrival reading and does not hold them, so
- * nothing else would ever name them.
+ * The rows a finding read after reject. The inventory is the arrival reading and
+ * does not hold them, so the document lists every one here. The terminal lists a
+ * finding's cookies only when it has no vendor table for them: a reject that leaves
+ * 78 cookies behind reads by vendor there, as the arrival does, and the rows stay in
+ * the files, which every check writes whatever form is picked.
  */
-const listedRows = ({ listed }: Finding): string[] => {
+const listedRows = ({ listed, groups }: Finding, complete: boolean): string[] => {
   if (listed.cookies.length + listed.hosts.length === 0) return [];
+  const cookieRows = complete || groups.length === 0 ? cookieTable(listed.cookies) : [FULL_ROWS_IN_FILES];
   return [
     '',
     '_Read after the reject button was pressed:_',
-    ...(listed.cookies.length > 0 ? ['', ...cookieTable(listed.cookies)] : []),
+    ...(listed.cookies.length > 0 ? ['', ...cookieRows] : []),
     ...(listed.hosts.length > 0 ? ['', ...hostTable(listed.hosts)] : []),
   ];
 };
@@ -101,7 +106,7 @@ const lawLines = (finding: Finding): string[] =>
     .sort((a, b) => Number(b.applies) - Number(a.applies))
     .map(({ name, applies, text }) => `- **${name}** — ${applies ? text : `_Not a finding here._ ${text}`}`);
 
-const findingBlock = (finding: Finding, index: number, top: number): string[] => {
+const findingBlock = (finding: Finding, index: number, top: number, complete: boolean): string[] => {
   return [
     '',
     `### ${index}. ${finding.title}`,
@@ -109,7 +114,7 @@ const findingBlock = (finding: Finding, index: number, top: number): string[] =>
     finding.detail,
     ...(finding.shape ? ['', `_${finding.shape}_`] : []),
     ...groupTable(finding, top),
-    ...listedRows(finding),
+    ...listedRows(finding, complete),
     '',
     ...lawLines(finding),
   ];
@@ -176,7 +181,7 @@ const build = (assessment: Assessment, complete: boolean): string => {
     const findings = ordered(assessment.findings);
     if (complete) lines.push(...gridTable(findings));
     for (const [index, finding] of findings.entries()) {
-      lines.push(...findingBlock(finding, index + 1, top));
+      lines.push(...findingBlock(finding, index + 1, top, complete));
     }
   }
 
