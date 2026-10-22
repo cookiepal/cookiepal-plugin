@@ -17,6 +17,9 @@
  *    cookie IDs, are personal data), art. 6 (lawful basis), art. 4(11) and 7
  *    (what consent is, and withdrawing it as easily as giving it) and art. 13
  *    (telling people what is collected and why, when it is collected).
+ *  - ePrivacy Directive 2002/58/EC art. 5(3), which applies alongside the GDPR
+ *    and is what governs storing or reading anything on a visitor's device,
+ *    personal data or not. It is printed with the GDPR and labelled as its own.
  *  - CCPA/CPRA: California Civil Code 1798.100 (notice at collection),
  *    1798.120 and 1798.135 (opt out of sale or sharing, and honouring an
  *    opt-out preference signal).
@@ -60,8 +63,10 @@ export const LAWS: Record<LawKey, Law> = {
     basis: 'opt-in',
     asks:
       'Personal data, which includes the online identifiers cookies and trackers carry, needs a lawful basis ' +
-      'before it is processed, and for tracking that basis is normally the visitor’s consent. That consent ' +
-      'has to be freely given, specific, informed and unambiguous, and as easy to withdraw as it was to give.',
+      'before it is processed, and for tracking that basis is normally the visitor’s consent: freely given, ' +
+      'specific, informed and unambiguous, and as easy to withdraw as it was to give. Under the ePrivacy ' +
+      'Directive art. 5(3), which applies alongside the GDPR, storing or reading anything on a visitor’s ' +
+      'device needs that permission first, unless it is strictly necessary to provide what they asked for.',
   },
   ccpa: {
     key: 'ccpa',
@@ -113,7 +118,8 @@ export type FindingKind =
   | 'unidentified-cookies'
   | 'hosts-before-consent'
   | 'active-after-reject'
-  | 'set-after-reject';
+  | 'set-after-reject'
+  | 'contacted-after-reject';
 
 /**
  * What each law makes of each finding. `null` means the finding is not a
@@ -125,7 +131,9 @@ type Explanations = Record<FindingKind, Record<LawKey, string | null>>;
 
 const OPT_IN_BEFORE_CONSENT =
   'These were set before the visitor was asked anything, so any of them that carry personal data on the ' +
-  'basis of consent were set before that consent existed.';
+  'basis of consent were set before that consent existed. Under the ePrivacy Directive art. 5(3), which ' +
+  'applies alongside the GDPR, any of them that are not strictly necessary needed the visitor’s permission ' +
+  'before they were stored at all, whether or not they carry personal data.';
 
 export const EXPLANATIONS: Explanations = {
   'tracking-before-consent': {
@@ -188,6 +196,18 @@ export const EXPLANATIONS: Explanations = {
       'This is a finding here too, for the same reason: acting on a refusal by starting new tracking is not ' +
       'honouring it.',
   },
+  'contacted-after-reject': {
+    gdpr:
+      'The visitor refused, and the page still sent their IP address and page to these companies. Any of ' +
+      'them that track the visitor are doing so after a refusal, which has to be as effective as agreeing.',
+    lgpd:
+      'Sharing a visitor’s data with a third party needs its own legal basis, and after a refusal that basis ' +
+      'cannot be the visitor’s consent.',
+    law25: 'These third parties received the visitor’s data after the visitor declined to activate anything.',
+    ccpa:
+      'This is a finding here too if any of these hosts receive personal information for advertising: the ' +
+      'visitor opted out, and an opt-out has to be honoured.',
+  },
 };
 
 /** Why a finding is not reported as a problem under a given law. */
@@ -202,6 +222,7 @@ export const NOT_A_FINDING: Record<FindingKind, Partial<Record<LawKey, string>>>
   'hosts-before-consent': {},
   'active-after-reject': {},
   'set-after-reject': {},
+  'contacted-after-reject': {},
 };
 
 /**
@@ -225,7 +246,7 @@ export const SCOPE =
  */
 export const FLAG_KEY = (strong: (term: string) => string): string =>
   `Everything marked ${strong('flagged')} is explained below. ${strong('Not flagged')} means that law does not ` +
-  'treat it as a problem, and the reason is given with the finding. Neither is a verdict on the page.';
+  'treat it as a problem on its own, and the reason is given with the finding. Neither is a verdict on the page.';
 
 /** The rule, stated in the output itself and not only in the skill. */
 export const NO_VERDICT =
