@@ -133,8 +133,7 @@ const LOCATE = function locate(
   };
 
   /** A box that holds the page's own layout is past where any banner ends. */
-  const holdsLandmark = (box: Element): boolean =>
-    [...box.querySelectorAll(LANDMARKS)].some(landmark);
+  const holdsLandmark = (box: Element): boolean => [...box.querySelectorAll(LANDMARKS)].some(landmark);
 
   /** The banner, or, when only a body keyword said there was one, the boxes around that keyword. */
   const roots: Element[] = [];
