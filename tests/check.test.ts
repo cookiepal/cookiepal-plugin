@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import { isThirdParty } from '../src/browser.ts';
 import { categorise } from '../src/categorise.ts';
-import { decline, readConsent, share } from '../src/consent.ts';
+import { decline, ERASURE_GAP_MS, markForgotten, readConsent, share } from '../src/consent.ts';
 import { MAX_PAGE_TEXT, pageText } from '../src/pageText.ts';
 import { type Limits, parsePlan } from '../src/plan.ts';
 import { buildConsent, buildConsentRun, buildSubmission, type CapturedCookie } from '../src/result.ts';
@@ -360,12 +360,12 @@ describe('install ID consent', () => {
   });
 
   test('nothing is asked or stored before the first answer', () => {
-    assert.deepEqual(readConsent(dataDir()), { asked: false, installId: null });
+    assert.deepEqual(readConsent(dataDir()), { asked: false, installId: null, sharing: false });
   });
 
   test('a no is remembered and creates no ID', () => {
     const dir = dataDir();
-    assert.deepEqual(decline(dir), { asked: true, installId: null });
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
     assert.doesNotMatch(readFileSync(join(dir, 'install-id.json'), 'utf8'), /[0-9a-f]{8}-/);
   });
 
@@ -374,9 +374,82 @@ describe('install ID consent', () => {
     const { installId } = share(dir);
     assert.match(installId ?? '', /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.equal(share(dir).installId, installId);
+    markForgotten(dir, installId ?? '', 0);
+    markForgotten(dir, installId ?? '', ERASURE_GAP_MS);
     decline(dir);
-    assert.deepEqual(readConsent(dir), { asked: true, installId: null });
+    assert.deepEqual(readConsent(dir), { asked: true, installId: null, sharing: false });
     assert.doesNotMatch(readFileSync(join(dir, 'install-id.json'), 'utf8'), new RegExp(installId ?? 'x'));
+  });
+
+  // Deleting the ID is the irreversible step: it is the only thing that can find
+  // the checks stored under it, so the order is enforced here, not in the skill.
+  test('withdrawing refuses while a stored ID has not been erased server-side', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+
+    assert.equal(decline(dir), null);
+    assert.equal(readConsent(dir).installId, installId);
+
+    assert.deepEqual(decline(dir, { force: true }), { asked: true, installId: null, sharing: false });
+  });
+
+  // Withdrawing takes effect at once: the ID is kept only to finish the erasure.
+  test('a refused withdrawal stops sharing the ID but keeps it', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+
+    assert.equal(decline(dir), null);
+    assert.deepEqual(readConsent(dir), { asked: true, installId, sharing: false });
+  });
+
+  test('withdrawing also deletes the ID from the erasure record', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+    markForgotten(dir, installId ?? '', 0);
+    markForgotten(dir, installId ?? '', ERASURE_GAP_MS);
+
+    decline(dir);
+    assert.doesNotMatch(readFileSync(join(dir, 'forgotten-install-ids.json'), 'utf8'), new RegExp(installId ?? 'x'));
+  });
+
+  test('the erasure marker is per ID, so a stale one does not open the gate', () => {
+    const dir = dataDir();
+    // Two clean erasures far enough apart: they would open the gate for that ID.
+    markForgotten(dir, '3b241101-e2bb-4255-8caf-4136c566a962', 0);
+    markForgotten(dir, '3b241101-e2bb-4255-8caf-4136c566a962', ERASURE_GAP_MS);
+    share(dir);
+
+    assert.equal(decline(dir), null);
+  });
+
+  test('two erasures made at the same moment prove no more than one', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+    markForgotten(dir, installId ?? '', 1_000);
+    markForgotten(dir, installId ?? '', 1_000 + ERASURE_GAP_MS - 1);
+    assert.equal(decline(dir), null);
+
+    markForgotten(dir, installId ?? '', 1_000 + ERASURE_GAP_MS);
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
+  });
+
+  // The server's index can lag, so a check stored just before the first run can
+  // be missing from it. Only the second run is evidence that nothing was missed.
+  test('one clean erasure is not enough to delete the ID', () => {
+    const dir = dataDir();
+    const { installId } = share(dir);
+
+    markForgotten(dir, installId ?? '', 0);
+    assert.equal(decline(dir), null);
+    assert.equal(readConsent(dir).installId, installId);
+
+    markForgotten(dir, installId ?? '', ERASURE_GAP_MS);
+    assert.deepEqual(decline(dir), { asked: true, installId: null, sharing: false });
+  });
+
+  test('a malformed ID is never recorded as erased', () => {
+    const dir = dataDir();
+    assert.equal(markForgotten(dir, 'not-an-id'), false);
   });
 });
 

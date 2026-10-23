@@ -1,5 +1,5 @@
 {
-  "description": "Keeps query strings off plan_check, and hands each plan_check plan and each submit_check result to the local check, so neither passes through the shell.",
+  "description": "Keeps query strings off plan_check, hands each plan_check plan and each submit_check result to the local check, and records a confirmed forget_install so the install ID is never deleted locally while the checks it names are still stored.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-plan",
+            "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-plan",
             "timeout": 10
           }
         ]
@@ -30,6 +30,16 @@
           {
             "type": "command",
             "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" save-result",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__forget_install$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" save-forgotten",
             "timeout": 10
           }
         ]

@@ -66,15 +66,21 @@ const parseJson = (text: unknown): unknown => {
 };
 
 /** The hook gets the tool's text content as a string; the other shapes an MCP result takes are read too. */
-const planFrom = (response: unknown): Record<string, unknown> | null => {
-  if (typeof response === 'string') return planFrom(parseJson(response));
+/**
+ * The structured body of a PostToolUse `tool_response`, whatever shape it took:
+ * the hook gets the tool's text content as a string, as a content-block array
+ * or as an object, and a caller that reads only one of them silently misreads
+ * the others. Null when it is none of them.
+ */
+export const resultFrom = (response: unknown): Record<string, unknown> | null => {
+  if (typeof response === 'string') return resultFrom(parseJson(response));
   if (Array.isArray(response)) {
     const text = response.find((block) => isRecord(block) && block.type === 'text');
-    return isRecord(text) ? planFrom(parseJson(text.text)) : null;
+    return isRecord(text) ? resultFrom(parseJson(text.text)) : null;
   }
   if (!isRecord(response)) return null;
   if (isRecord(response.structuredContent)) return response.structuredContent;
-  if (Array.isArray(response.content)) return planFrom(response.content);
+  if (Array.isArray(response.content)) return resultFrom(response.content);
   return response;
 };
 
@@ -122,7 +128,7 @@ const isRef = (value: unknown): value is string => typeof value === 'string' && 
 export const savePlan = (dataDir: string, payload: unknown): boolean => {
   if (!isRecord(payload) || !isRecord(payload.tool_input)) return false;
   const { url } = payload.tool_input;
-  const plan = planFrom(payload.tool_response);
+  const plan = resultFrom(payload.tool_response);
   if (typeof url !== 'string' || !plan || !isCheckId(plan.checkId)) return false;
   const saved: SavedPlan = { url, plan, savedAt: Date.now() };
   write(join(dataDir, PLANS), `${plan.checkId}.json`, saved);
@@ -187,7 +193,7 @@ export const sweep = (dataDir: string): void => {
 export const saveResult = (dataDir: string, payload: unknown): boolean => {
   if (!isRecord(payload) || !isRecord(payload.tool_input)) return false;
   const { checkId } = payload.tool_input;
-  const result = planFrom(payload.tool_response);
+  const result = resultFrom(payload.tool_response);
   if (!result || !isCheckId(checkId)) return false;
   if (result.checkId !== undefined && result.checkId !== checkId) return false;
   write(join(dataDir, RESULTS), `${checkId}.json`, result);

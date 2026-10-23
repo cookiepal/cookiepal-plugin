@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { assess } from './assess.ts';
 import { CheckError, type ConsentRequest, findBrowser, loadPage, type PageLoad } from './browser.ts';
 import { categorise } from './categorise.ts';
-import { decline, readConsent, share } from './consent.ts';
+import { clearForgotten, decline, markForgotten, readConsent, share } from './consent.ts';
 import { renderInventory, renderMarkdownDocument, renderTerminal } from './markdown.ts';
 import { fallbacksFor, OUTPUT_MODES, readOutput, setOutput } from './output.ts';
 import { pageText } from './pageText.ts';
@@ -12,6 +12,7 @@ import { buildConsent, buildSubmission } from './result.ts';
 import {
   isCheckId,
   readResult,
+  resultFrom,
   savePlan,
   saveResult,
   saveTarget,
@@ -27,6 +28,9 @@ import { prepareUrl } from './url.ts';
  *
  *   prepare  stdin: the URL       → the page (origin and path) for plan_check, a local `ref`, and the install-ID answer
  *   consent  share | decline      → records the answer; `decline` also withdraws and deletes the ID
+ *   consent  status               → the answer and the stored ID, read-only, so it can be erased server-side first
+ *   consent  decline --anyway     → declines even though the stored ID's checks were never erased
+ *   save-forgotten stdin: hook JSON → the PostToolUse hook on forget_install records the erasure
  *   run <ref>                     → loads the URL prepare saved and returns the exact submit_check arguments
  *   assess <checkId> [inventory]  → the plain-language read of that check against GDPR, CCPA, LGPD and Law 25
  *   output artifact|html|markdown|terminal
@@ -50,6 +54,9 @@ const MAX_INPUT = 64 * 1024;
  * ordinary page, and well past `MAX_INPUT` on a busy one.
  */
 const MAX_HOOK_INPUT = 16 * 1024 * 1024;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 // The page chooses its cookie names, domains and paths and the hosts it calls,
 // not only its title, so the notice names every field that carries them.
@@ -101,14 +108,18 @@ const prepare = async (): Promise<Output> => {
   sweep(dataDir);
   // The query string stays on this machine: `run` loads the full URL, and CookiePal only gets the page.
   const ref = saveTarget(dataDir, { page: prepared.page, target: prepared.target });
-  const { asked, installId } = readConsent(dataDir);
+  const { asked, installId, sharing } = readConsent(dataDir);
+  // Handing the ID out is what makes any earlier erasure stale: the check about
+  // to run stores a row that erasure never covered, so the gate has to close again.
+  // An ID kept only to finish an erasure is never handed out, so its record stays.
+  if (installId && sharing) clearForgotten(dataDir, installId);
   return {
     ok: true,
     page: prepared.page,
     ref,
     removedCrawlMarkers: prepared.removed,
     pluginVersion: pluginVersion(),
-    consent: { asked, installId },
+    consent: { asked, installId: sharing ? installId : null },
   };
 };
 
@@ -120,11 +131,33 @@ const output = (mode: string | undefined): Output => {
   return { ok: true, output: saved.mode, asked: saved.asked };
 };
 
-const consent = (answer: string | undefined): Output => {
+export const STILL_STORED =
+  'The install ID is no longer sent, but this machine keeps it because its stored checks have not been ' +
+  "erased twice. Run the cookiepal server's forget_install with it until two runs, at least a few seconds " +
+  'apart, have reported nothing remaining: the second catches a check the first could not see yet. To delete ' +
+  'it from this machine anyway, which leaves those checks to expire with nothing able to find them, run "consent decline --anyway".';
+
+const consent = (answer: string | undefined, flag: string | undefined): Output => {
   if (!dataDir) return NO_DATA_DIR;
-  const state = answer === 'share' ? share(dataDir) : answer === 'decline' ? decline(dataDir) : null;
-  if (!state) return { ok: false, error: 'Use "consent share" or "consent decline".' };
-  return { ok: true, consent: { asked: state.asked, installId: state.installId } };
+  if (answer !== 'share' && answer !== 'decline' && answer !== 'status') {
+    return { ok: false, error: 'Use "consent share", "consent decline" or "consent status".' };
+  }
+
+  // `status` changes nothing: it is how the stored ID is read before
+  // `forget_install` erases the checks held under it, because `decline` deletes
+  // the ID and nothing could look them up afterwards.
+  if (answer === 'status') {
+    const state = readConsent(dataDir);
+    return { ok: true, consent: state };
+  }
+
+  const state = answer === 'share' ? share(dataDir) : decline(dataDir, { force: flag === '--anyway' });
+  // `decline` refuses while an ID is stored whose checks were never erased: the
+  // ID is the only way back to them, so losing it is the one thing to prevent.
+  // The ID comes back with the refusal, so the user can be shown it.
+  if (!state) return { ok: false, error: STILL_STORED, installId: readConsent(dataDir).installId };
+
+  return { ok: true, consent: state };
 };
 
 const run = async (ref: string | undefined): Promise<Output> => {
@@ -320,7 +353,7 @@ const main = async (): Promise<Output> => {
     case 'prepare':
       return prepare();
     case 'consent':
-      return consent(argument);
+      return consent(argument, extra);
     case 'run':
       return run(argument);
     case 'assess':
@@ -331,11 +364,32 @@ const main = async (): Promise<Output> => {
       return {
         ok: false,
         error:
-          'Usage: check.mjs prepare | consent share|decline | run <ref> | ' +
+          'Usage: check.mjs prepare | consent share|decline [--anyway]|status | run <ref> | ' +
           'assess <checkId> [inventory] | output artifact|html|markdown|terminal | ' +
-          'save-plan | save-result | guard-plan',
+          'save-plan | save-result | save-forgotten | guard-plan',
       };
   }
+};
+
+/**
+ * Records a `forget_install` that erased everything, so `decline` will delete
+ * the local ID. Nothing short of that counts: a tool error, a run that left rows
+ * behind, or a response in a shape this cannot read all leave the marker unwritten
+ * and the ID in place. The gate is only worth having if it fails closed.
+ */
+export const saveForgotten = (dir: string, payload: unknown): boolean => {
+  if (!isRecord(payload)) return false;
+  const { tool_input: input, tool_response: response } = payload;
+  if (!isRecord(input) || typeof input.installId !== 'string') return false;
+  if (isRecord(response) && response.isError === true) return false;
+
+  // Positive proof, not the absence of an error flag: a string or a content
+  // array carries no `isError` at all, so trusting its absence reads every
+  // such failure as a success.
+  const body = resultFrom(response);
+  if (!body || body.isError === true || !Number.isInteger(body.deleted) || body.remaining !== 0) return false;
+
+  return markForgotten(dir, input.installId);
 };
 
 /** A hook prints nothing and always exits 0, so it can never block or change the tool's result. */
@@ -349,8 +403,12 @@ const GUARD_REASON =
   "plan_check takes only a page as the check's prepare step returns it: origin and path, with no query string, " +
   'fragment or credentials. Run prepare and send its `page`; the rest stays on this machine.';
 
-const deny = () => {
-  const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: GUARD_REASON };
+const GUARD_ID_REASON =
+  'plan_check may carry an installId only while the user is sharing it, and only the one prepare returned. ' +
+  "Sharing has stopped or the ID is not this machine's, so leave installId out.";
+
+const deny = (reason = GUARD_REASON) => {
+  const decision = { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason };
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: decision })}\n`);
 };
 
@@ -359,6 +417,13 @@ const deny = () => {
  * returns it, so a query string, fragment or credentials cannot reach CookiePal
  * even if the skill's steps are skipped. Input too large to read is refused
  * too; input that is not JSON is left to Claude Code, which never sends it.
+ *
+ * It holds the install ID to the same standard: one is let through only while
+ * the user is sharing it and it is the ID stored here. After stop-sharing, the
+ * ID may still be in the conversation, from a refused decline or `consent
+ * status`, so only this keeps it from being sent again. An ID let through is
+ * about to store a new check, which retires any erasure marker for it now,
+ * at the moment it is sent, not when a check was merely prepared.
  */
 const guard = async () => {
   let raw: string;
@@ -368,15 +433,28 @@ const guard = async () => {
     deny();
     return;
   }
-  let url: unknown;
+  let input: Record<string, unknown>;
   try {
-    url = JSON.parse(raw)?.tool_input?.url;
+    const parsed = JSON.parse(raw)?.tool_input;
+    if (!isRecord(parsed)) return;
+    input = parsed;
   } catch {
     return;
   }
+  const { url, installId } = input;
   if (typeof url !== 'string') return;
   const prepared = prepareUrl(url);
-  if (!prepared.ok || prepared.page !== url) deny();
+  if (!prepared.ok || prepared.page !== url) {
+    deny();
+    return;
+  }
+  if (installId === undefined || installId === null) return;
+  const consent = dataDir ? readConsent(dataDir) : null;
+  if (typeof installId !== 'string' || !dataDir || !consent?.sharing || consent.installId !== installId) {
+    deny(GUARD_ID_REASON);
+    return;
+  }
+  clearForgotten(dataDir, installId);
 };
 
 const print = (output: Output) => {
@@ -388,6 +466,8 @@ if (process.argv[2] === 'save-plan') {
   hook(savePlan);
 } else if (process.argv[2] === 'save-result') {
   hook(saveResult);
+} else if (process.argv[2] === 'save-forgotten') {
+  hook(saveForgotten);
 } else if (process.argv[2] === 'guard-plan') {
   guard();
 } else {

@@ -153,6 +153,8 @@ Only what it takes to count checks and store the result:
 - the **country** the check ran from, worked out from your IP address, which is **not stored**;
 - a **random install ID**, only if you agreed to share one.
 
+One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check stop-sharing` sends the install ID twice more, on its own, so the checks stored under it can be erased, and a third time if the first two came too close together. Nothing else accompanies it.
+
 **The page is loaded by you, on your machine. CookiePal never loads it.** Cookies are categorised locally against the open-source [`@cookiepal-oss/cookie-db`](https://www.npmjs.com/package/@cookiepal-oss/cookie-db) catalogue, so nothing is sent anywhere to be identified. The risk read is assembled locally too.
 
 The check never uses your own browser profile, so your cookies and sign-ins are never opened and never read.
@@ -171,7 +173,9 @@ To stop sharing it and delete it:
 /cookiepal:check stop-sharing
 ```
 
-Checks you already submitted keep the ID they were sent with until they expire. Send it to [support@cookiepal.io](mailto:support@cookiepal.io) and we will delete them.
+That also deletes the checks you already submitted: the plugin sends the ID to CookiePal twice, a few seconds apart, because a check stored just before can be missed by the first run, and a third time if the two came too close together. Once two of those runs, far enough apart, both confirm nothing is left under it, the plugin removes the ID from this machine. You are told how many went.
+
+If the erasure does not go through, sharing still stops: the ID is never sent with a check again. It stays on this machine only because it is the only thing that can find those checks, so running the command again is safe, because it deletes only what is left, and you can also send the ID to [support@cookiepal.io](mailto:support@cookiepal.io) to have them erased. If the ID is already gone from this machine but you kept a copy, send it to [support@cookiepal.io](mailto:support@cookiepal.io) and we will erase anything left under it.
 
 ## 🔄 Update and uninstall
 

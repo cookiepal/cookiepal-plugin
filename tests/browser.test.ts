@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -21,7 +30,9 @@ interface Output {
   page?: string;
   ref?: string;
   removedCrawlMarkers?: string[];
-  consent?: { asked: boolean; installId: string | null };
+  /** On a refused `consent decline`, the ID it kept. */
+  installId?: string | null;
+  consent?: { asked: boolean; installId: string | null; sharing?: boolean };
   submit: {
     cookies: { name: string; category: string }[];
     thirdPartyHosts: string[];
@@ -639,8 +650,150 @@ describe('install ID consent through the CLI', () => {
     const shared = (await cli(['consent', 'share'], '', env)).output.consent;
     assert.match(shared?.installId ?? '', /^[0-9a-f-]{36}$/);
 
-    await cli(['consent', 'decline'], '', env);
+    await cli(['consent', 'decline', '--anyway'], '', env);
     assert.equal((await cli(['prepare'], url, env)).output.consent?.installId, null);
+  });
+
+  // `stop-sharing` has to erase the stored checks before it deletes the ID, so
+  // it needs a way to read the ID that does not change anything. Read back
+  // through `prepare`, not through status's own answer: a status that returned
+  // the right thing and then wrote would pass every assertion on its own output.
+  test('status reads the stored ID without changing the answer', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const url = 'https://example.com';
+
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, {
+      asked: false,
+      installId: null,
+      sharing: false,
+    });
+    assert.deepEqual((await cli(['prepare'], url, env)).output.consent, { asked: false, installId: null });
+
+    const { installId } = (await cli(['consent', 'share'], '', env)).output.consent ?? {};
+    const shared = { asked: true, installId, sharing: true };
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, shared);
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, shared);
+    assert.deepEqual((await cli(['prepare'], url, env)).output.consent, { asked: true, installId });
+
+    await cli(['consent', 'decline', '--anyway'], '', env);
+    assert.deepEqual((await cli(['consent', 'status'], '', env)).output.consent, {
+      asked: true,
+      installId: null,
+      sharing: false,
+    });
+  });
+
+  // The ID is the only thing that can find the checks stored under it, so losing
+  // it before they are erased loses them for good. The order is a gate here, not
+  // a rule in the skill: it holds even when the steps are not followed.
+  test('decline refuses to delete a stored ID whose checks were never erased', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const { installId } = (await cli(['consent', 'share'], '', env)).output.consent ?? {};
+
+    const refused = (await cli(['consent', 'decline'], '', env)).output;
+
+    assert.equal(refused.ok, false);
+    assert.match(refused.error ?? '', /forget_install/);
+    // The refusal names the ID, so the user can be shown it.
+    assert.equal(refused.installId, installId);
+    assert.equal((await cli(['consent', 'status'], '', env)).output.consent?.installId, installId);
+    // And it is no longer sent with checks, though it is kept to finish the erasure.
+    assert.equal((await cli(['prepare'], 'https://example.com', env)).output.consent?.installId, null);
+  });
+
+  test('--anyway is the deliberate way past that gate', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    await cli(['consent', 'share'], '', env);
+
+    const forced = (await cli(['consent', 'decline', '--anyway'], '', env)).output;
+
+    assert.equal(forced.ok, true);
+    assert.deepEqual(forced.consent, { asked: true, installId: null, sharing: false });
+  });
+
+  // The hook is what opens the gate, and only for an erasure that actually ran.
+  // Every shape below is one a PostToolUse payload really takes, and all but the
+  // last must leave the gate shut: it fails closed or it is not a gate.
+  /** Moves every recorded erasure back past the gap, as if the next one came a while later. */
+  const backdateErasures = (env: Record<string, string>) => {
+    const path = join(env.COOKIEPAL_DATA_DIR, 'forgotten-install-ids.json');
+    // A response that kept the gate shut wrote no marker, so there is nothing to move.
+    if (!existsSync(path)) return;
+    const forgotten = JSON.parse(readFileSync(path, 'utf8')) as Record<string, number[]>;
+    const earlier = Object.fromEntries(
+      Object.entries(forgotten).map(([id, times]) => [id, times.map((time) => time - 60_000)]),
+    );
+    writeFileSync(path, JSON.stringify(earlier));
+  };
+
+  const sharedWith = async (env: Record<string, string>) =>
+    (await cli(['consent', 'share'], '', env)).output.consent?.installId ?? '';
+
+  for (const [name, response] of [
+    // Both error cases otherwise claim a complete erasure, so only the error flag shuts them.
+    ['an error flag', { isError: true, structuredContent: { deleted: 0, remaining: 0 } }],
+    ['a content-only error', { content: [{ type: 'text', text: '{"isError":true,"deleted":0,"remaining":0}' }] }],
+    ['a partial erasure', { isError: false, structuredContent: { deleted: 2, remaining: 5 } }],
+    ['a plain string failure', 'Deletion is not available yet.'],
+    ['a reply with no count of what it deleted', { structuredContent: { remaining: 0 } }],
+    ['a shape it cannot read', { nothing: 'useful' }],
+  ] as [string, unknown][]) {
+    test(`the forget_install hook keeps the gate shut on ${name}`, async () => {
+      const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+      const installId = await sharedWith(env);
+
+      const payload = JSON.stringify({ tool_input: { installId }, tool_response: response });
+      // Twice, far enough apart, so only the response itself can keep the gate shut.
+      await cli(['save-forgotten'], payload, env);
+      backdateErasures(env);
+      await cli(['save-forgotten'], payload, env);
+      const refused = (await cli(['consent', 'decline'], '', env)).output;
+
+      assert.equal(refused.ok, false);
+      assert.equal((await cli(['consent', 'status'], '', env)).output.consent?.installId, installId);
+    });
+  }
+
+  for (const [name, response] of [
+    ['structured content', { isError: false, structuredContent: { deleted: 2, remaining: 0 } }],
+    ['a content block', { content: [{ type: 'text', text: '{"deleted":2,"remaining":0}' }] }],
+    ['a plain string', '{"deleted":0,"remaining":0}'],
+  ] as [string, unknown][]) {
+    test(`the forget_install hook opens the gate after two complete erasures in ${name}`, async () => {
+      const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+      const installId = await sharedWith(env);
+      const payload = JSON.stringify({ tool_input: { installId }, tool_response: response });
+
+      await cli(['save-forgotten'], payload, env);
+      assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
+
+      backdateErasures(env);
+      await cli(['save-forgotten'], payload, env);
+      const allowed = (await cli(['consent', 'decline'], '', env)).output;
+
+      assert.equal(allowed.ok, true);
+      assert.equal(allowed.consent?.installId, null);
+    });
+  }
+
+  // A marker proves the checks stored up to then were erased. Running another
+  // check stores one it says nothing about, so the gate has to close again.
+  test('a later check retires the erasure marker', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const installId = await sharedWith(env);
+    const payload = JSON.stringify({
+      tool_input: { installId },
+      tool_response: { isError: false, structuredContent: { deleted: 1, remaining: 0 } },
+    });
+
+    await cli(['save-forgotten'], payload, env);
+    backdateErasures(env);
+    await cli(['save-forgotten'], payload, env);
+    await cli(['prepare'], 'https://example.com', env);
+
+    const refused = (await cli(['consent', 'decline'], '', env)).output;
+    assert.equal(refused.ok, false);
+    assert.equal((await cli(['consent', 'status'], '', env)).output.consent?.installId, installId);
   });
 
   test('without the plugin data folder the check says so and stores nothing', async () => {
@@ -787,6 +940,42 @@ describe('the plan_check guard', () => {
     const url = `https://example.com/?token=${'x'.repeat(70_000)}`;
     const { raw } = await cli(['guard-plan'], JSON.stringify({ tool_input: { url } }));
     assert.equal(JSON.parse(raw).hookSpecificOutput.permissionDecision, 'deny');
+  });
+
+  const withId = (installId: string, env: Record<string, string>) =>
+    cli(['guard-plan'], JSON.stringify({ tool_input: { url: 'https://example.com/', installId } }), env);
+  const decisionOf = (raw: string) => (raw ? JSON.parse(raw).hookSpecificOutput.permissionDecision : 'allow');
+
+  test('lets the install ID through only while it is being shared', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const installId = (await cli(['consent', 'share'], '', env)).output.consent?.installId ?? '';
+    assert.equal(decisionOf((await withId(installId, env)).raw), 'allow');
+
+    // A refused stop-sharing keeps the ID on this machine, and in the conversation.
+    assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
+    const { raw } = await withId(installId, env);
+    assert.equal(decisionOf(raw), 'deny');
+    assert.match(JSON.parse(raw).hookSpecificOutput.permissionDecisionReason, /only while the user is sharing/);
+  });
+
+  test('refuses an install ID that is not the one stored here, or with no data folder to check', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    await cli(['consent', 'share'], '', env);
+    assert.equal(decisionOf((await withId('3b241101-e2bb-4255-8caf-4136c566a962', env)).raw), 'deny');
+    assert.equal(
+      decisionOf((await withId('3b241101-e2bb-4255-8caf-4136c566a962', { COOKIEPAL_DATA_DIR: '' })).raw),
+      'deny',
+    );
+  });
+
+  test('sending the install ID retires its erasure marker, even with no prepare before it', async () => {
+    const env = { COOKIEPAL_DATA_DIR: join(newTemp(), 'data') };
+    const installId = (await cli(['consent', 'share'], '', env)).output.consent?.installId ?? '';
+    const path = join(env.COOKIEPAL_DATA_DIR, 'forgotten-install-ids.json');
+    writeFileSync(path, JSON.stringify({ [installId]: [0, 60_000] }));
+
+    await withId(installId, env);
+    assert.equal((await cli(['consent', 'decline'], '', env)).output.ok, false);
   });
 
   test('lets a bare page through, and ignores input it cannot read', async () => {
