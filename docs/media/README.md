@@ -5,14 +5,14 @@ plugin, not a demo reel. It needs to show the thing working, clearly, once.
 
 ## hero.gif
 
-Goes at the top of the README. A `/cookiepal:check` run, start to verdict.
+Goes at the top of the README. A `/cookiepal:check-one-page` run, start to verdict.
 
 ```sh
 brew install vhs
 vhs docs/media/hero.tape
 ```
 
-`/cookiepal:check` is a Claude Code command, not a shell command. The tape starts
+`/cookiepal:check-one-page` is a Claude Code command, not a shell command. The tape starts
 Claude Code first and types into it; typed at a zsh prompt it just produces
 `no such file or directory`.
 

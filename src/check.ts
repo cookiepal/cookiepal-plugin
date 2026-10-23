@@ -38,7 +38,7 @@ import {
 import { prepareUrl } from './url.ts';
 
 /**
- * The local half of /cookiepal:check. Claude runs it between the MCP calls:
+ * The local half of /cookiepal:check-one-page. Claude runs it between the MCP calls:
  *
  *   prepare  stdin: the URL       → the page (origin and path) for plan_check, a local `ref`, and the install-ID answer
  *   consent  share | decline      → records the answer; `decline` also withdraws and deletes the ID

@@ -1,6 +1,6 @@
 ---
 name: verify-installation
-description: Gets the CookiePal banner tag to paste into a site, and confirms it is live by loading the site's own page in a browser on this machine and uploading what it found, which sets the domain's banner verification status in CookiePal. Use when the user asks for their CookiePal install snippet or script tag, asks where to paste it, asks to verify, check or confirm that their CookiePal banner is installed or live, or asks why CookiePal still shows their banner as not installed.
+description: Gets the CookiePal banner tag to paste into a site, and confirms it is live by loading the site's own page in a browser on this machine and uploading what it found, which sets the domain's banner verification status in CookiePal. Use when the user runs /cookiepal:verify-installation, asks for their CookiePal install snippet or script tag, asks where to paste it, asks to verify, check or confirm that their CookiePal banner is installed or live, or asks why CookiePal still shows their banner as not installed.
 ---
 
 # Get the install tag, and verify it is live
@@ -82,4 +82,4 @@ Say what the status now is in CookiePal, that the reading was taken on this mach
 
 **Verifying again means redoing step 2 first.** A `ref` names one page load; once the page has been loaded it is spent. Run `CHECK prepare` for the page again, then `CHECK verify` with the new `ref`. The snippet from step 1 is still good for half an hour, so step 1 does not have to be repeated.
 
-Never tell the user a banner is compliant, only that CookiePal can see it installed. Whether the banner does what a law requires is what `/cookiepal:check` is for.
+Never tell the user a banner is compliant, only that CookiePal can see it installed. Whether the banner does what a law requires is what `/cookiepal:check-one-page` is for.

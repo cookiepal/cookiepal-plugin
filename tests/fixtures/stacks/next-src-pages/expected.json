@@ -1,0 +1,5 @@
+{
+  "stack": "Next.js",
+  "headFile": "src/pages/_document.ts",
+  "installState": "none"
+}

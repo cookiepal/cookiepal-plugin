@@ -1,0 +1,10 @@
+{
+  "name": "fixture-astro-header",
+  "private": true,
+  "dependencies": {
+    "astro": "5.0.0"
+  },
+  "devDependencies": {
+    "vite": "6.0.0"
+  }
+}
