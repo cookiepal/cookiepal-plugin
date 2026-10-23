@@ -3,7 +3,7 @@
     "target": "es2022",
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "lib": ["es2023"],
+    "lib": ["es2023", "dom"],
     "types": ["node"],
     "strict": true,
     "noEmit": true,

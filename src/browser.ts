@@ -4,6 +4,14 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { getDomain } from 'tldts';
+import {
+  type ConsentSkipReason,
+  clickTargetExpression,
+  locateExpression,
+  type MatchedBy,
+  parseLocated,
+} from './banner.ts';
+import type { ButtonMatchers, ConsentPlan } from './plan.ts';
 import type { CapturedCookie } from './result.ts';
 
 /** A failure worth showing the user as it is. */
@@ -150,6 +158,25 @@ export const isThirdParty = (host: string, pageHost: string): boolean => {
   return site(host) !== page;
 };
 
+/** Which consent button this load presses, and the matchers for finding it. */
+export interface ConsentRequest {
+  which: 'accept' | 'reject';
+  plan: ConsentPlan;
+  matchers: ButtonMatchers;
+}
+
+export interface ConsentAttempt {
+  bannerFound: boolean;
+  rejectByDefault: boolean;
+  pressed: boolean;
+  matchedBy: MatchedBy | null;
+  reason: ConsentSkipReason | null;
+  /** The button's own label. Page content; it is cleaned before anyone sees it. */
+  label: string | null;
+  /** What the page had after the click. Null when nothing was pressed. */
+  after: { cookies: CapturedCookie[]; thirdPartyHosts: string[] } | null;
+}
+
 export interface PageLoad {
   cookies: CapturedCookie[];
   thirdPartyHosts: string[];
@@ -157,6 +184,8 @@ export interface PageLoad {
   finalUrl: unknown;
   httpStatus: number | null;
   loadTimedOut: boolean;
+  /** Null when this load was the arrival reading and pressed nothing. */
+  consent: ConsentAttempt | null;
 }
 
 interface LoadOptions {
@@ -164,25 +193,55 @@ interface LoadOptions {
   url: string;
   settleMs: number;
   timeoutMs: number;
+  /** Omitted for the arrival reading, which clicks nothing. */
+  consent?: ConsentRequest;
 }
 
 /**
+ * Every temporary profile currently in use, and the browser holding it. A check
+ * runs several loads, so Ctrl-C has to clean up all of them, not just the last
+ * one to register a handler.
+ */
+const live = new Set<{ chrome: () => ChildProcess | undefined; profile: string }>();
+let handlersInstalled = false;
+
+const onSignal = () => {
+  for (const session of live) {
+    session.chrome()?.kill('SIGKILL');
+    rmSync(session.profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+  live.clear();
+  process.exit(130);
+};
+
+const watchSignals = () => {
+  if (handlersInstalled) return;
+  handlersInstalled = true;
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+};
+
+const stopWatchingSignals = () => {
+  if (live.size > 0 || !handlersInstalled) return;
+  handlersInstalled = false;
+  process.removeListener('SIGINT', onSignal);
+  process.removeListener('SIGTERM', onSignal);
+};
+
+/**
  * Loads one page once in a fresh temporary profile and reads what was set
- * before any consent: nothing on the page is clicked and no link is followed.
+ * before any consent. With a `consent` request it then presses that one button
+ * and reads again; without one it clicks nothing. No link is ever followed.
  * The profile is deleted afterwards, on failure and on Ctrl-C too.
  */
-export const loadPage = async ({ browserPath, url, settleMs, timeoutMs }: LoadOptions): Promise<PageLoad> => {
+export const loadPage = async ({ browserPath, url, settleMs, timeoutMs, consent }: LoadOptions): Promise<PageLoad> => {
   const profile = mkdtempSync(join(tmpdir(), 'cookiepal-check-'));
   let chrome: ChildProcess | undefined;
 
   const removeProfile = () => rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  const onSignal = () => {
-    chrome?.kill('SIGKILL');
-    removeProfile();
-    process.exit(130);
-  };
-  process.once('SIGINT', onSignal);
-  process.once('SIGTERM', onSignal);
+  const session = { chrome: () => chrome, profile };
+  live.add(session);
+  watchSignals();
 
   try {
     chrome = spawn(
@@ -217,11 +276,12 @@ export const loadPage = async ({ browserPath, url, settleMs, timeoutMs }: LoadOp
       chrome?.once('exit', () => reject(new CheckError('The browser closed unexpectedly.'))),
     );
     const cdp = connect(chrome.stdio[3] as Writable, chrome.stdio[4] as Readable);
-    const run = capture(cdp, url, settleMs, timeoutMs);
-    // Past the plan's own budget (timeoutMs to load, then settleMs), something is stuck: give up rather than hang.
+    const run = capture(cdp, url, settleMs, timeoutMs, consent);
+    // Past the plan's own budget (timeoutMs to load, then settleMs, then the consent click), something
+    // is stuck: give up rather than hang.
     return await withTimeout(
       Promise.race([run, started, closed]),
-      timeoutMs + settleMs + 20_000,
+      timeoutMs + settleMs + (consent ? consent.plan.afterClickSettleMs + 10_000 : 0) + 20_000,
       'The check took too long and was stopped.',
     ).finally(async () => {
       await withTimeout(cdp.send('Browser.close'), 3000, 'close').catch(() => {});
@@ -232,16 +292,106 @@ export const loadPage = async ({ browserPath, url, settleMs, timeoutMs }: LoadOp
       await exited(chrome, 5000);
     }
     removeProfile();
-    process.removeListener('SIGINT', onSignal);
-    process.removeListener('SIGTERM', onSignal);
+    live.delete(session);
+    stopWatchingSignals();
   }
 };
 
 type Cdp = ReturnType<typeof connect>;
 
-const capture = async (cdp: Cdp, url: string, settleMs: number, timeoutMs: number): Promise<PageLoad> => {
+const pickCookies = (cookies: CapturedCookie[]): CapturedCookie[] =>
+  // Picked field by field, so the value the protocol also returns goes no further.
+  cookies.map(({ name, domain, path, expires, httpOnly, secure, sameSite }) => ({
+    name,
+    domain,
+    path,
+    expires,
+    httpOnly,
+    secure,
+    sameSite,
+  }));
+
+/** Runs one fixed expression in the page. Anything the page throws or returns unusably reads as null. */
+const evaluate = async (cdp: Cdp, sessionId: string, expression: string): Promise<unknown> => {
+  try {
+    const answer = (await withTimeout(
+      cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: false }, sessionId),
+      5000,
+      'evaluate',
+    )) as { result?: { value?: unknown }; exceptionDetails?: unknown };
+    return answer.exceptionDetails ? null : (answer.result?.value ?? null);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Presses one consent button: finds it, clicks where it is, and waits. A button
+ * that cannot be found, or that more than one matcher claims, is not pressed —
+ * the check never presses one it is unsure of — and the run says why.
+ *
+ * Only what the check cannot do stops a press. Nothing the page says about
+ * itself does: a page claiming `rejectByDefault` still gets its reject button
+ * pressed, because that claim is the page's own and the point of the check is
+ * to measure the button rather than take the page's word for it.
+ */
+const pressConsent = async (
+  cdp: Cdp,
+  sessionId: string,
+  request: ConsentRequest,
+): Promise<Omit<ConsentAttempt, 'after'> & { clicked: boolean }> => {
+  const located = parseLocated(await evaluate(cdp, sessionId, locateExpression(request.plan, request.matchers)));
+  const base = {
+    bannerFound: located.bannerFound,
+    rejectByDefault: located.rejectByDefault,
+    matchedBy: located.matchedBy,
+    label: located.label,
+  };
+
+  if (!located.point) {
+    return { ...base, pressed: false, reason: located.reason ?? 'no-button', clicked: false };
+  }
+
+  const { x, y } = located.point;
+  let clicked = false;
+  if (located.covered) {
+    // Something sits over the button, so a mouse click would land on that instead.
+    clicked = (await evaluate(cdp, sessionId, clickTargetExpression())) === true;
+  } else {
+    try {
+      const mouse = { x, y, button: 'left', clickCount: 1 };
+      await cdp.send('Input.dispatchMouseEvent', { ...mouse, type: 'mouseMoved', buttons: 0 }, sessionId);
+      await cdp.send('Input.dispatchMouseEvent', { ...mouse, type: 'mousePressed', buttons: 1 }, sessionId);
+      await cdp.send('Input.dispatchMouseEvent', { ...mouse, type: 'mouseReleased', buttons: 0 }, sessionId);
+      clicked = true;
+    } catch {
+      clicked = (await evaluate(cdp, sessionId, clickTargetExpression())) === true;
+    }
+  }
+
+  return clicked
+    ? { ...base, pressed: true, reason: null, clicked }
+    : { ...base, pressed: false, reason: 'click-failed', clicked };
+};
+
+const capture = async (
+  cdp: Cdp,
+  url: string,
+  settleMs: number,
+  timeoutMs: number,
+  consentRequest?: ConsentRequest,
+): Promise<PageLoad> => {
   const pageHost = new URL(url).hostname;
   const hosts = new Set<string>();
+  /**
+   * Hosts contacted after the consent button was pressed, tracked separately
+   * because `hosts` is cumulative: a host already in it cannot be added again,
+   * so a tracker that loads on arrival and keeps beaconing through reject would
+   * never show up in a difference taken against the arrival set. This is the
+   * only place that information exists.
+   */
+  const hostsAfterClick = new Set<string>();
+  let pressed = false;
   let mainSession = '';
   let mainFrame = '';
   let documentRequest = '';
@@ -258,7 +408,10 @@ const capture = async (cdp: Cdp, url: string, settleMs: number, timeoutMs: numbe
         const request = params.request as { url: string };
         try {
           const { protocol, hostname } = new URL(request.url);
-          if ((protocol === 'http:' || protocol === 'https:') && isThirdParty(hostname, pageHost)) hosts.add(hostname);
+          if ((protocol === 'http:' || protocol === 'https:') && isThirdParty(hostname, pageHost)) {
+            hosts.add(hostname);
+            if (pressed) hostsAfterClick.add(hostname);
+          }
         } catch {}
         if (sessionId === mainSession && params.type === 'Document' && params.frameId === mainFrame) {
           documentRequest = params.requestId as string;
@@ -296,6 +449,7 @@ const capture = async (cdp: Cdp, url: string, settleMs: number, timeoutMs: numbe
     .sessionId;
   await cdp.send('Page.enable', {}, mainSession);
   await cdp.send('Network.enable', {}, mainSession);
+  await cdp.send('Runtime.enable', {}, mainSession);
   await cdp.send(
     'Target.setAutoAttach',
     { autoAttach: true, waitForDebuggerOnStart: true, flatten: true },
@@ -328,25 +482,38 @@ const capture = async (cdp: Cdp, url: string, settleMs: number, timeoutMs: numbe
   await delay(settleMs);
 
   const { cookies } = (await cdp.send('Storage.getCookies')) as { cookies: CapturedCookie[] };
+  // The arrival reading, taken before anything is pressed. Each consent run compares against
+  // its own, so a page that behaves differently between loads cannot invent a change.
+  const arrival = { cookies: pickCookies(cookies), thirdPartyHosts: [...hosts] };
+
+  let consent: ConsentAttempt | null = null;
+  if (consentRequest) {
+    // Set before the press, not after: requests the click causes start arriving
+    // while `pressConsent` is still awaiting, and those are exactly the ones
+    // being counted.
+    pressed = true;
+    const { clicked, ...attempt } = await pressConsent(cdp, mainSession, consentRequest);
+    let after: ConsentAttempt['after'] = null;
+    if (clicked) {
+      await delay(consentRequest.plan.afterClickSettleMs);
+      const settled = (await cdp.send('Storage.getCookies')) as { cookies: CapturedCookie[] };
+      // Absolute: every cookie still set, and only the hosts contacted since
+      // the press. The server counts these rather than reconstructing them.
+      after = { cookies: pickCookies(settled.cookies), thirdPartyHosts: [...hostsAfterClick] };
+    }
+    consent = { ...attempt, after };
+  }
+
   const { targetInfo } = (await cdp.send('Target.getTargetInfo', { targetId })) as {
     targetInfo: { title: unknown; url: unknown };
   };
 
   return {
-    // Picked field by field, so the value the protocol also returns goes no further.
-    cookies: cookies.map(({ name, domain, path, expires, httpOnly, secure, sameSite }) => ({
-      name,
-      domain,
-      path,
-      expires,
-      httpOnly,
-      secure,
-      sameSite,
-    })),
-    thirdPartyHosts: [...hosts],
+    ...arrival,
     title: targetInfo.title,
     finalUrl: targetInfo.url,
     httpStatus,
     loadTimedOut,
+    consent,
   };
 };

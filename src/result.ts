@@ -1,3 +1,5 @@
+import type { ConsentSkipReason, MatchedBy } from './banner.ts';
+import type { ConsentAttempt } from './browser.ts';
 import { type Category, categorise } from './categorise.ts';
 import { type Limits, RESULT_VERSION } from './plan.ts';
 
@@ -23,6 +25,31 @@ export interface SubmittedCookie {
   category: Category;
 }
 
+/** What one consent run saw after its click, read absolutely rather than as a delta. */
+export interface SubmittedConsentRun {
+  pressed: boolean;
+  reason?: ConsentSkipReason;
+  matchedBy?: MatchedBy;
+  /** Every cookie still set after the press. */
+  cookiesAfterClick: SubmittedCookie[];
+  /**
+   * Of those, the ones this run's own arrival reading did not have: cookies the
+   * press itself set. A delta, but against the reading from the same page load,
+   * which is what the old one was not.
+   */
+  newAfterClick: SubmittedCookie[];
+  /** Third-party hosts contacted since the press, which the browser tracks separately. */
+  hostsAfterClick: string[];
+}
+
+export interface SubmittedConsent {
+  tested: boolean;
+  rejectByDefault?: boolean;
+  bannerFound: boolean;
+  accept: SubmittedConsentRun;
+  reject: SubmittedConsentRun;
+}
+
 /** Exactly the arguments `submit_check` takes. */
 export interface Submission {
   checkId: string;
@@ -30,6 +57,8 @@ export interface Submission {
   cookies: SubmittedCookie[];
   thirdPartyHosts: string[];
   truncated: boolean;
+  /** Left out entirely when the plan did not ask for the consent action. */
+  consent?: SubmittedConsent;
 }
 
 // The grammar `submit_check` holds each string to. A cookie outside it is left
@@ -68,6 +97,90 @@ const toSubmitted = (cookie: CapturedCookie, limits: Limits): SubmittedCookie | 
       ? { sameSite: cookie.sameSite as SubmittedCookie['sameSite'] }
       : {}),
     category: categorise(name).category,
+  };
+};
+
+/** Identifies a cookie the way the browser does: name, domain and path together. */
+const key = ({ name, domain, path }: { name: string; domain: string; path: string }) => `${name}\n${domain}\n${path}`;
+
+const NOT_PRESSED = (reason: ConsentSkipReason): SubmittedConsentRun => ({
+  pressed: false,
+  reason,
+  cookiesAfterClick: [],
+  newAfterClick: [],
+  hostsAfterClick: [],
+});
+
+/**
+ * What one run saw after its click. Absolute, from this run alone: the server
+ * used to reconstruct it by subtracting deltas from a different page load's
+ * arrival, so the surviving count moved between runs on one site, and a tracker
+ * that ran from arrival through reject could not appear at all.
+ *
+ * `arrival` is this run's own reading, used only for `newAfterClick`: comparing
+ * against it is safe because both come from the same page load.
+ */
+export const buildConsentRun = (
+  attempt: ConsentAttempt | null,
+  arrival: { cookies: CapturedCookie[]; thirdPartyHosts: string[] },
+  limits: Limits,
+): SubmittedConsentRun => {
+  // No attempt at all means this run's own load failed, so nothing was seen of the page.
+  // Saying "no banner" here would report on a page the check never got to look at.
+  if (!attempt) return NOT_PRESSED('load-failed');
+  if (!attempt.pressed || !attempt.after) return NOT_PRESSED(attempt.reason ?? 'no-button');
+
+  const after = attempt.after.cookies
+    .map((cookie) => toSubmitted(cookie, limits))
+    .filter((cookie): cookie is SubmittedCookie => cookie !== null);
+
+  // Against this run's own arrival, so "the press set this" means exactly that.
+  // Split before the cap, and the press's own cookies first, so a page that
+  // already filled the cap on arrival cannot crowd out what the press set.
+  const before = new Set(arrival.cookies.map(key));
+  const set = after.filter((cookie) => !before.has(key(cookie)));
+  const kept = after.filter((cookie) => before.has(key(cookie)));
+  const newAfterClick = set.slice(0, limits.maxCookies);
+  const cookiesAfterClick = [...set, ...kept].slice(0, limits.maxCookies);
+
+  const hostsAfterClick: string[] = [];
+  for (const host of new Set(attempt.after.thirdPartyHosts.map((h) => h.toLowerCase()))) {
+    if (hostsAfterClick.length >= limits.maxThirdPartyHosts) break;
+    if (fits(host, HOSTNAME, limits.maxHostLength)) hostsAfterClick.push(host);
+  }
+
+  return {
+    pressed: true,
+    ...(attempt.matchedBy ? { matchedBy: attempt.matchedBy } : {}),
+    cookiesAfterClick,
+    newAfterClick,
+    hostsAfterClick,
+  };
+};
+
+export interface ConsentLoad {
+  attempt: ConsentAttempt | null;
+  arrival: { cookies: CapturedCookie[]; thirdPartyHosts: string[] };
+}
+
+/**
+ * The consent half of the submission: one run for accept, one for reject.
+ *
+ * `bannerFound` is what a run that actually loaded saw. A run whose load failed
+ * contributes nothing to it, so a failed accept run beside a successful reject
+ * run reports the banner the reject run found, and says `load-failed` for the
+ * accept — never that the page had no banner.
+ */
+export const buildConsent = (accept: ConsentLoad, reject: ConsentLoad, limits: Limits): SubmittedConsent => {
+  const runs = {
+    accept: buildConsentRun(accept.attempt, accept.arrival, limits),
+    reject: buildConsentRun(reject.attempt, reject.arrival, limits),
+  };
+  return {
+    tested: runs.accept.pressed || runs.reject.pressed,
+    bannerFound: accept.attempt?.bannerFound === true || reject.attempt?.bannerFound === true,
+    ...(accept.attempt?.rejectByDefault || reject.attempt?.rejectByDefault ? { rejectByDefault: true } : {}),
+    ...runs,
   };
 };
 
