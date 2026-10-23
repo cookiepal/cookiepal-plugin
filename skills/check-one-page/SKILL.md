@@ -90,7 +90,9 @@ The plugin's hook has already handed the plan to the check. Pass the `ref` from 
 CHECK run <ref from step 2>
 ```
 
-This is the arrival reading and, when the plan asks for the consent action, the accept and reject runs after it. Each run is a separate load in its own fresh profile, so it usually takes under a minute, and at most about two with the default plan. It refuses a plan version it does not know, or a plan for a different site, and tells the user to update the plugin where that applies. It deletes every temporary profile afterwards, including when the check fails.
+Run it with the Bash tool's `timeout` set to `300000`. Three loads can each wait out the cap, which takes longer than Bash's two-minute default, and a check cut off there reports nothing.
+
+This is the arrival reading and, when the plan asks for the consent action, the accept and reject runs after it. Each run is a separate load in its own fresh profile. Each one waits as long as the plan asks and then until the page stops loading things, up to the plugin's own ten-second cap, so a page that is slow to settle is given the time to finish rather than read half-done. A check usually takes under a minute, and at most a few with the default plan. It refuses a plan version it does not know, or a plan for a different site, and tells the user to update the plugin where that applies. It deletes every temporary profile afterwards, including when the check fails.
 
 Nothing here needs a decision from you: the check finds the buttons, presses them and reports the result. Do not try to press a button yourself, and do not re-run the check to get a different answer.
 
@@ -139,6 +141,7 @@ The read from step 7 is the whole summary, or, when `submit_check` failed, the o
 - "Removed <markers> from the URL before loading, because CookiePal's banner accepts all cookies when it sees them." Use `removedCrawlMarkers` from step 2.
 - When `truncated` is true: `local.droppedCookies` cookies or `local.droppedHosts` hosts were left out before the result was submitted.
 - When `local.loadTimedOut` is true, the page did not finish loading. When `local.httpStatus` is not 2xx, give the status.
+- When `local.underMeasured` is true, a reading was taken while the page was still working, so what the check found is what the page had set by then and not necessarily everything it sets. Say so in one line and do not present the counts as complete. Do not offer to run the check again: step 5 applies, and a second run is not a second opinion.
 - When `pageContent.landedOn` is set, the page moved to that host, for example through a redirect. Say so.
 
 ### 9. Give the read in the form the user wants
