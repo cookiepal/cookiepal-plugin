@@ -1,5 +1,5 @@
 {
-  "description": "Keeps query strings off plan_check, keeps the install ID off connect_account unless it comes with a recorded answer to linking it and asks Claude Code to confirm a yes with the user, hands each plan_check plan, each submit_check result and each get_install_snippet tag to the local check, refuses verify_installation evidence no local page load produced, and records a confirmed forget_install so the install ID is never deleted locally while the checks it names are still stored.",
+  "description": "Keeps query strings off plan_check, keeps the install ID off connect_account unless it comes with a recorded answer to linking it and asks Claude Code to confirm a yes with the user, hands each plan_check plan, each submit_check result and each get_install_snippet tag to the local check, refuses verify_installation evidence no local page load produced and a check_gcm_status reading no local Consent Mode check produced, records a confirmed forget_install so the install ID is never deleted locally while the checks it names are still stored, saves each start_scan answer and spawns the local crawl it describes, and refuses an upload_scan_report call whose report does not match what that crawl actually produced.",
   "hooks": {
     "PreToolUse": [
       {
@@ -28,6 +28,26 @@
           {
             "type": "command",
             "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-verify",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__check_gcm_status$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-gcm",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__upload_scan_report$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-upload",
             "timeout": 10
           }
         ]
@@ -70,6 +90,16 @@
           {
             "type": "command",
             "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" save-forgotten",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__start_scan$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" save-scan",
             "timeout": 10
           }
         ]

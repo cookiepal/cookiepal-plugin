@@ -73,11 +73,17 @@ const SAME_SITE = new Set(['Strict', 'Lax', 'None']);
 const fits = (value: string, pattern: RegExp, max: number, min = 1) =>
   value.length >= min && value.length <= max && pattern.test(value);
 
+type CookieLimits = Pick<Limits, 'maxCookieNameLength' | 'maxCookieDomainLength' | 'maxCookiePathLength'>;
+
+/** Whether a cookie's name, domain and path fit the grammar `submit_check` and `upload_scan_report` both hold them to. */
+export const cookieFits = (cookie: { name: string; domain: string; path: string }, limits: CookieLimits): boolean =>
+  fits(cookie.name, COOKIE_NAME, limits.maxCookieNameLength, 0) &&
+  fits(cookie.domain, COOKIE_DOMAIN, limits.maxCookieDomainLength) &&
+  fits(cookie.path, COOKIE_PATH, limits.maxCookiePathLength);
+
 const toSubmitted = (cookie: CapturedCookie, limits: Limits): SubmittedCookie | null => {
+  if (!cookieFits(cookie, limits)) return null;
   const { name, domain, path } = cookie;
-  if (!fits(name, COOKIE_NAME, limits.maxCookieNameLength, 0)) return null;
-  if (!fits(domain, COOKIE_DOMAIN, limits.maxCookieDomainLength)) return null;
-  if (!fits(path, COOKIE_PATH, limits.maxCookiePathLength)) return null;
 
   let expires: number | null = null;
   if (cookie.expires === -1) {

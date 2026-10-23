@@ -11,6 +11,9 @@ importers:
       '@cookiepal-oss/cookie-db':
         specifier: 1.0.0
         version: 1.0.0
+      '@cookiepal-oss/integrations':
+        specifier: 1.2.0
+        version: 1.2.0
       tldts:
         specifier: 7.4.18
         version: 7.4.18
@@ -141,6 +144,9 @@ packages:
 
   '@cookiepal-oss/cookie-db@1.0.0':
     resolution: {integrity: sha512-fbpwuM4Fokc5xqRQP/elMCfULVP3VzzrDxTkJd0Z6+/Mqr8GRyQQd+JzTgCkhxv0DWab3T2pZlPKyEyNqD7LcA==}
+
+  '@cookiepal-oss/integrations@1.2.0':
+    resolution: {integrity: sha512-XEJM3NUBHIlWoy5CBQrfcZgM3oWMC+B/USn1UWR/zJ5wxOru7aSPAau56KTZFALABSBOlmAgd4wSRG5xkEP2dg==}
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -514,6 +520,8 @@ snapshots:
     optional: true
 
   '@cookiepal-oss/cookie-db@1.0.0': {}
+
+  '@cookiepal-oss/integrations@1.2.0': {}
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true
