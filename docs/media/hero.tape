@@ -1,7 +1,7 @@
 # The README's one recording: the plugin doing its job, once, simply.
 # Run from the repo root:  vhs docs/media/hero.tape
 #
-# `/cookiepal:check` is a Claude Code command, not a shell command, so this
+# `/cookiepal:check-one-page` is a Claude Code command, not a shell command, so this
 # tape starts Claude Code first and types into it. Typing it at a zsh prompt
 # just gives you "no such file or directory".
 #
@@ -37,7 +37,7 @@ Sleep 25s
 Show
 
 Sleep 2s
-Type "/cookiepal:check https://cookiepal.io"
+Type "/cookiepal:check-one-page https://cookiepal.io"
 # Typing "/" opens Claude Code's command menu. Let it settle, and check on the
 # first take that Enter runs the command rather than picking a completion.
 Sleep 1500ms

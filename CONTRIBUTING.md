@@ -40,15 +40,21 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 
 | Path | What lives there |
 | --- | --- |
-| `commands/check.md` | The `/cookiepal:check` command |
+| `commands/check-one-page.md` | The `/cookiepal:check-one-page` command |
 | `skills/check-one-page/SKILL.md` | The skill the command follows |
-| `commands/connect.md` | The `/cookiepal:connect` command |
+| `commands/connect-account.md` | The `/cookiepal:connect-account` command |
 | `skills/connect-account/SKILL.md` | The skill it follows: connecting a CookiePal account, and the separate question of linking the install ID to it |
+| `commands/verify-installation.md` | The `/cookiepal:verify-installation` command |
 | `skills/verify-installation/SKILL.md` | The skill for the install tag and for confirming the banner is live from a page load on this machine |
+| `commands/detect-stack.md` | The `/cookiepal:detect-stack` command |
+| `skills/detect-stack/SKILL.md` | The skill it follows: naming the framework and the file that renders the page head |
+| `skills/detect-stack/references/stacks.md` | The detection rules, as one table: `tests/stacks.test.ts` reads the same table the skill does |
+| `commands/install-banner.md` | The `/cookiepal:install-banner` command |
+| `skills/install-banner/SKILL.md` | The skill it follows: putting the tag in the head as early as the framework allows, and stopping at the diff |
 | `src/` | The local check: browser control, cookie capture, banner matching, categorisation, the install-tag finder, the risk read and its rendered forms |
 | `src/laws.ts` | The curated legal wording |
 | `hooks/hooks.json` | Hooks that keep query strings off `plan_check`, keep the install ID off `connect_account` without a recorded answer to linking it (and ask Claude Code to confirm a yes with the user, which bypass-permissions mode skips), hand each plan, result and install tag to the local check, and refuse a `verify_installation` reading no local run produced |
-| `tests/` | Unit tests and browser tests against a local server |
+| `tests/` | Unit tests and browser tests against a local server; `tests/fixtures/stacks/` holds one sample repo per detected stack, plus the ambiguous and already-installed cases |
 | `.claude-plugin/` | The plugin and marketplace manifests |
 
 ## Things worth knowing before you change something

@@ -1,0 +1,7 @@
+{
+  "name": "fixture-other-domain",
+  "private": true,
+  "devDependencies": {
+    "vite": "6.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "stack": "Astro",
+  "headFiles": [
+    "src/layouts/Base.astro",
+    "src/layouts/Marketing.astro"
+  ],
+  "ambiguous": true,
+  "installState": "none"
+}

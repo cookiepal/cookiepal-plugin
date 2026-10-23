@@ -1,0 +1,5 @@
+{
+  "name": "fixture-vendored-tag",
+  "private": true,
+  "devDependencies": { "vite": "6.0.0" }
+}

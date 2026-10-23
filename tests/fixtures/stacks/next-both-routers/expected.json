@@ -1,0 +1,9 @@
+{
+  "stack": "Next.js",
+  "headFiles": [
+    "app/layout.tsx",
+    "pages/_document.tsx"
+  ],
+  "ambiguous": true,
+  "installState": "none"
+}

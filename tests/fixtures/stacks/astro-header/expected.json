@@ -1,0 +1,5 @@
+{
+  "stack": "Astro",
+  "headFile": "src/layouts/BaseLayout.astro",
+  "installState": "none"
+}
