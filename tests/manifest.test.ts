@@ -66,6 +66,10 @@ describe('repository contents', () => {
 
   const PUBLIC_HOSTS = new Set(['cookiepal.io', 'www.cookiepal.io', 'mcp.cookiepal.io']);
   const FORBIDDEN = [/staging/i, /execute-api/i, /amazonaws\.com/i, /westpoint/i];
+  // The company is named in exactly two ways: the repository it is published from,
+  // and the README's legal footer. Anything else naming it, an internal host, a
+  // person's address or a ticket tracker, still fails.
+  const PUBLIC_COMPANY_NAMES = [new RegExp(REPO, 'g'), /\[Westpoint\]\(https:\/\/westpoint\.io\)/g];
 
   test('the only CookiePal hosts named are the public ones', () => {
     for (const { path, text } of files) {
@@ -78,17 +82,40 @@ describe('repository contents', () => {
     }
   });
 
+  test('every hook matcher fires for both forms of the tool name', () => {
+    const hooks = JSON.parse(readFileSync(join(root, 'hooks/hooks.json'), 'utf8'));
+    const entries = Object.values(hooks.hooks as Record<string, { matcher: string }[]>).flat();
+    assert.ok(entries.length > 0, 'hooks.json registers no hooks');
+
+    for (const { matcher } of entries) {
+      const tool = matcher.match(/__([a-z_]+)\$$/)?.[1];
+      assert.ok(matcher.startsWith('^') && matcher.endsWith('$'), `${matcher} must be anchored`);
+      assert.ok(tool, `matcher names no tool: ${matcher}`);
+      const pattern = new RegExp(matcher);
+
+      // Bundled with the plugin, and registered from a project-level .mcp.json.
+      for (const name of [`mcp__plugin_cookiepal_cookiepal__${tool}`, `mcp__cookiepal__${tool}`]) {
+        assert.match(name, pattern, `${matcher} does not match ${name}`);
+      }
+      // It must not reach another server's identically named tool, or a longer tool name.
+      assert.doesNotMatch(`mcp__other__${tool}`, pattern, `${matcher} over-matches mcp__other__${tool}`);
+      assert.doesNotMatch(`mcp__cookiepal__${tool}_status`, pattern, `${matcher} over-matches a longer name`);
+    }
+  });
+
   // The public suffix list that tldts bundles names thousands of other companies'
   // hosts, `amazonaws.com` and `*-staging` among them. It is public data, not
   // ours, so its section of the bundle is the one part left out of this check.
   const PUBLIC_SUFFIX_LIST = /\/\/ node_modules\/\.pnpm\/tldts@[^\n]*\n[\s\S]*?(?=\n\/\/ (?:node_modules|src)\/)/g;
 
-  // The repository's own path is the one company name allowed, since it is in every install command.
-  test('no internal hostnames, AWS endpoints or company names', () => {
+  test('no internal hostnames or AWS endpoints', () => {
     for (const { path, text } of files) {
-      const withoutRepo = text.replaceAll(REPO, '').replace(PUBLIC_SUFFIX_LIST, '');
+      const withoutSuffixList = PUBLIC_COMPANY_NAMES.reduce(
+        (rest, allowed) => rest.replace(allowed, ''),
+        text.replace(PUBLIC_SUFFIX_LIST, ''),
+      );
       for (const pattern of FORBIDDEN) {
-        assert.doesNotMatch(withoutRepo, pattern, `${path} matches ${pattern}`);
+        assert.doesNotMatch(withoutSuffixList, pattern, `${path} matches ${pattern}`);
       }
     }
   });

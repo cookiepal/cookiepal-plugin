@@ -786,6 +786,12 @@ describe('output preference', () => {
 describe('renderDocument', () => {
   const doc = () => renderDocument(assess(tracked()));
 
+  test('the local file contacts no one when it is opened, not even for fonts', () => {
+    const html = doc();
+    assert.ok(!/https?:\/\/(?!www\.w3\.org)/.test(html), 'only the SVG namespace may appear as a URL');
+    assert.ok(!/<link\b/i.test(html));
+  });
+
   test('is a complete page, not the fragment the publisher wraps', () => {
     const html = doc();
     assert.match(html, /^<!doctype html>/);

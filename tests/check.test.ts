@@ -104,6 +104,14 @@ describe('parsePlan', () => {
     const parsed = parsePlan({ ...plan, planVersion: 2 });
     assert.equal(parsed.ok, false);
     assert.match(!parsed.ok ? parsed.error : '', /Update the plugin/);
+    // Both commands, then a reload: the marketplace update alone leaves the old plugin installed.
+    for (const step of [
+      'claude plugin marketplace update cookiepal',
+      'claude plugin update cookiepal@cookiepal',
+      '/reload-plugins',
+    ]) {
+      assert.ok(!parsed.ok && parsed.error.includes(step), step);
+    }
   });
 
   test('a plan cannot stretch the load past the skill’s own bounds', () => {

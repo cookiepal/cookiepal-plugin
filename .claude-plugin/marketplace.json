@@ -5,7 +5,7 @@
     "url": "https://cookiepal.io"
   },
   "metadata": {
-    "description": "The official CookiePal plugins for Claude Code."
+    "description": "The official CookiePal plugins. Works with Claude Code."
   },
   "plugins": [
     {
