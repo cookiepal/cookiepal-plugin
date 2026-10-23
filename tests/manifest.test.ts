@@ -51,6 +51,28 @@ describe('plugin and marketplace manifests', () => {
   });
 });
 
+describe('the logo', () => {
+  const inlined = readFileSync(join(root, 'src/report.ts'), 'utf8');
+  const flat = (svg: string) => svg.replace(/\s*\n\s*/g, '');
+
+  // The page cannot load an external image, so the lockups are inlined. These
+  // assertions are what stops the inline copies and the files the README shows
+  // from drifting apart the next time the brand mark changes.
+  for (const [file, cls] of [
+    ['assets/logo.svg', 'logo-light'],
+    ['assets/logo-dark.svg', 'logo-dark'],
+  ]) {
+    test(`${file} is the lockup inlined as .${cls}`, () => {
+      const asset = flat(readFileSync(join(root, file), 'utf8'));
+      const body = asset.slice(asset.indexOf('>') + 1);
+      assert.ok(inlined.includes(`class="logo ${cls}"`), `${cls} must be inlined`);
+      for (const tag of body.match(/<(path|circle|rect)[^>]*>/g) ?? []) {
+        assert.ok(inlined.includes(tag), `${file}: ${tag.slice(0, 60)}… is missing from src/report.ts`);
+      }
+    });
+  }
+});
+
 describe('repository contents', () => {
   const skipDirs = new Set(['.git', 'node_modules']);
   const self = relative(root, import.meta.filename);

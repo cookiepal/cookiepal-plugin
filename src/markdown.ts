@@ -8,6 +8,7 @@ import {
   ordered,
   vendorText,
 } from './assess.ts';
+import { FLAG_KEY } from './laws.ts';
 
 /**
  * The risk read as text (CPL-396), in two shapes that share everything but
@@ -155,10 +156,10 @@ const gridTable = (findings: Finding[]): string[] => {
     `| --- |${laws.map(() => ' :-: |').join('')}`,
     ...findings.map(
       (finding) =>
-        `| ${cell(finding.title)} | ${finding.byLaw.map(({ applies }) => (applies ? 'flagged' : '—')).join(' | ')} |`,
+        `| ${cell(finding.title)} | ${finding.byLaw.map(({ applies }) => (applies ? 'flagged' : 'not flagged')).join(' | ')} |`,
     ),
     '',
-    'Everything marked **flagged** is explained below. A dash means that law does not treat it as a problem, and the reason is given with the finding.',
+    FLAG_KEY((term) => `**${term}**`),
   ];
 };
 

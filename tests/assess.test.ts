@@ -528,7 +528,19 @@ describe('renderReport', () => {
   test('defines every colour token on bare :root before the dark blocks redefine them', () => {
     const html = page();
     const root = html.slice(html.indexOf(':root {'), html.indexOf('@media (prefers-color-scheme: dark)'));
-    for (const token of ['--bg', '--surface', '--ink', '--body', '--muted', '--line', '--brand', '--flag']) {
+    const tokens = [
+      '--bg',
+      '--surface',
+      '--ink',
+      '--body',
+      '--muted',
+      '--line',
+      '--brand',
+      '--flag',
+      '--flag-edge',
+      '--lead-edge',
+    ];
+    for (const token of tokens) {
       assert.ok(root.includes(`${token}:`), `${token} must exist in the light palette`);
     }
     assert.match(html, /:root:not\(\[data-theme="light"\]\)/);
@@ -536,10 +548,25 @@ describe('renderReport', () => {
     assert.match(html, /body \{[^}]*background: var\(--bg\)/);
   });
 
+  test('carries both lockups and shows exactly one, swapped by theme', () => {
+    const html = page();
+    assert.equal(html.match(/class="logo logo-light"/g)?.length, 1);
+    assert.equal(html.match(/class="logo logo-dark"/g)?.length, 1);
+    assert.match(html, /\.logo-dark \{ display: none; \}/, 'the light lockup is the default');
+    for (const scope of [':root:not\\(\\[data-theme="light"\\]\\)', ':root\\[data-theme="dark"\\]']) {
+      assert.match(html, new RegExp(`${scope} \\.logo-light \\{ display: none; \\}`), scope);
+      assert.match(html, new RegExp(`${scope} \\.logo-dark \\{ display: block; \\}`), scope);
+    }
+    assert.equal(html.match(/aria-label="CookiePal"/g)?.length, 2, 'whichever one shows carries the name');
+  });
+
   test('loads nothing the artifact policy blocks: no external image, script or stylesheet but fonts', () => {
     const html = page();
     assert.ok(!/<script/i.test(html), 'the page needs no script at all');
-    assert.ok(!/<img|background-image/i.test(html), 'the mark is inline SVG, since external images are blocked');
+    assert.ok(
+      !/<img|background-image/i.test(html),
+      'the logo lockups are inline SVG, since external images are blocked',
+    );
     const sheets = [...html.matchAll(/<link[^>]+href="([^"]+)"/g)].map(([, href]) => href);
     for (const href of sheets) assert.match(href, /^https:\/\/fonts\.(googleapis|gstatic)\.com/);
   });
@@ -572,7 +599,7 @@ describe('renderReport', () => {
     const html = page();
     assert.ok(html.indexOf('What was found, against each law') < html.indexOf('class="finding'));
     assert.match(html, /class="mark-cell yes">flagged</);
-    assert.match(html, /class="mark-cell no">&#8212;</);
+    assert.match(html, /class="mark-cell no">not flagged</);
     assert.match(html, /class="lawline off"/);
     assert.ok(!html.includes('What each law asks for'), 'the reference block belongs only to a clean result');
   });
@@ -824,6 +851,12 @@ describe('renderMarkdownDocument', () => {
     assert.match(md, /### What was found, against each law/);
     assert.match(md, /Every cookie set before consent/);
     assert.ok(!md.includes('Ask for the full inventory'), 'a file is reread, so it holds the lists');
+  });
+
+  test('marks the law a finding is not a problem under, and says neither mark is a verdict', () => {
+    const md = renderMarkdownDocument(assess(tracked()));
+    assert.match(md, /\| flagged \| not flagged \|/);
+    assert.match(md, /Neither is a verdict on the page\./);
   });
 
   test('the terminal read stays the trimmed one', () => {
