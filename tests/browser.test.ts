@@ -166,6 +166,28 @@ const pages: Record<string, () => { headers?: Record<string, string>; body: stri
        </div>`,
     ),
   }),
+  // No banner, and the hero sits beside `main`, not in it: the box holding both stops the climb.
+  '/keyword-beside-main': () => ({
+    body: banner(
+      'keyword-beside-main',
+      `<div id="root">
+         <section><h1>Fresh bread</h1><p>We use cookies to remember your basket.</p></section>
+         <main>
+           <form><p>Pending invitations</p><button type="button" onclick="reject()">Reject all</button></form>
+         </main>
+       </div>`,
+    ),
+  }),
+  // No banner, a page that fits the screen, and no `main`, `header` or `nav`: only the hero's `h1` stops the climb.
+  '/keyword-no-landmarks': () => ({
+    body: banner(
+      'keyword-no-landmarks',
+      `<div id="root">
+         <section><h1>Fresh bread</h1><p>We use cookies to remember your basket.</p></section>
+         <form><p>Pending invitations</p><button type="button" onclick="reject()">Reject all</button></form>
+       </div>`,
+    ),
+  }),
   // A fixed banner with a <header> of its own: that header is the banner's, so the climb goes past it.
   '/keyword-banner-header': () => ({
     body: banner(
@@ -890,8 +912,10 @@ describe('the consent action', () => {
   for (const [path, layout] of [
     ['/keyword-short-page', 'a page that fits the screen'],
     ['/keyword-shell', 'a main that scrolls inside a 100vh shell'],
+    ['/keyword-beside-main', 'a page whose hero sits beside main'],
+    ['/keyword-no-landmarks', 'a page with no main, header or nav'],
   ]) {
-    test(`keyword text in a hero stops at main on ${layout}`, async () => {
+    test(`keyword text in a hero does not reach the page's own buttons on ${layout}`, async () => {
       const { output } = await withConsent(path);
       const consent = output.submit.consent;
 
