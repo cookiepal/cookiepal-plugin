@@ -241,7 +241,7 @@ Once the change is deployed, run `/cookiepal:verify-installation` to confirm it 
 /cookiepal:match-site-design
 ```
 
-Reads the repository's design tokens — Tailwind's config or `@theme`, CSS variables, MUI, Chakra, WordPress `theme.json` or Sass variables — and proposes banner colours and a position that match. Every colour is checked against **WCAG AA** contrast, including the white text on the banner's filled buttons, and one that falls short is darkened or lightened by as little as it takes, with the change shown. The config is read as text and never run.
+Reads the repository's design tokens — Tailwind's config or `@theme`, CSS variables, MUI, Chakra, WordPress `theme.json` or Sass variables — and proposes banner colours that match, and a position when the repo gives a reason for one, such as a chat widget in a corner. Every colour is checked against **WCAG AA** contrast, including the white text on the banner's filled buttons, and one that falls short is darkened or lightened by as little as it takes, with the change shown. The config is read as text and never run.
 
 **Nothing is saved until you say yes** to the proposed values. A repository with no design tokens is told so, and its banner keeps the style it has.
 

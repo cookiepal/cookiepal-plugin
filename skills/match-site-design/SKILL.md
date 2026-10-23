@@ -93,9 +93,7 @@ was changed in the dashboard. Change nothing and call nothing.
 
 ### 4. Choose a position
 
-Always propose a `bannerTypePosition`, because step 7 saves exactly what step 6 shows. It is
-`bottom`, CookiePal's own default, unless the repo shows a reason for another, and then name that
-reason:
+Propose a `bannerTypePosition` only when the repo shows a reason for one, and name that reason:
 
 - A full-width bar fixed to the bottom of the page (a mobile nav, a sticky cart): `top`.
 - A widget fixed to the bottom-right corner (a chat launcher): `bottomLeft`, and `bannerFabPosition`
@@ -104,6 +102,9 @@ reason:
 
 The evidence has to be in the repo: a `position: fixed` (or `sticky`) element with `bottom: 0`, or a
 chat widget's script or component. Do not infer a position from the design's look.
+
+With no such reason, propose no position: the banner keeps the one it has, so a box or popup chosen
+in the dashboard is not turned into a bottom bar.
 
 ### 5. Check the colours
 
@@ -148,8 +149,9 @@ Which of accept, reject and customise is filled depends on the banner's button t
 cannot see, so never say which button is which. The banner has these four colours and no others:
 never describe a link, border or hover colour.
 
-Then the position and the reason for it, and which domain it will be saved to: the one the user
-named, or the account's default domain.
+Then the position and the reason for it, or, when step 4 proposed none, that the position stays as
+it is. Then which domain it will be saved to: the one the user named, or the account's default
+domain.
 
 Ask whether to save these values to the banner. **Then stop and wait for the reply.** Nothing is
 saved yet, and saying so is part of the question.
@@ -165,8 +167,8 @@ Call the cookiepal server's `customise_banner` tool with:
 
 - `domainId` when the user named a domain, and without it otherwise,
 - `colors`: the `colors` object from the last `CHECK design`, exactly as printed, all four slots,
-- `positions`: the `bannerTypePosition` step 6 showed, and `bannerFabPosition` only when step 4
-  proposed one.
+- `positions` only when step 4 proposed one: the `bannerTypePosition` step 6 showed, and
+  `bannerFabPosition` only when step 4 proposed one.
 
 Send nothing else: no `logo` and no `texts`. This skill changes colours and position only.
 
