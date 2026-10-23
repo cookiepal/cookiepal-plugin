@@ -298,6 +298,12 @@ export interface PageLoad {
   settle: Settle;
   /** Null when this load was the arrival reading and pressed nothing. */
   consent: ConsentAttempt | null;
+  /**
+   * What `inspect` returned, read once the page had settled; null when no
+   * expression was given, or when the page threw or returned nothing usable.
+   * Raw page content: the caller holds it to a shape before anything reads it.
+   */
+  inspected: unknown;
 }
 
 interface LoadOptions {
@@ -307,6 +313,13 @@ interface LoadOptions {
   timeoutMs: number;
   /** Omitted for the arrival reading, which clicks nothing. */
   consent?: ConsentRequest;
+  /**
+   * One fixed expression to evaluate in the settled page, for a load that is
+   * reading the DOM rather than counting cookies — the install check. It is
+   * this plugin's own source, never anything from the server or the page, and
+   * it runs after the settle so a tag injected by a tag manager is seen.
+   */
+  inspect?: string;
 }
 
 /**
@@ -346,7 +359,14 @@ const stopWatchingSignals = () => {
  * and reads again; without one it clicks nothing. No link is ever followed.
  * The profile is deleted afterwards, on failure and on Ctrl-C too.
  */
-export const loadPage = async ({ browserPath, url, settleMs, timeoutMs, consent }: LoadOptions): Promise<PageLoad> => {
+export const loadPage = async ({
+  browserPath,
+  url,
+  settleMs,
+  timeoutMs,
+  consent,
+  inspect,
+}: LoadOptions): Promise<PageLoad> => {
   const profile = mkdtempSync(join(tmpdir(), 'cookiepal-check-'));
   let chrome: ChildProcess | undefined;
 
@@ -394,7 +414,7 @@ export const loadPage = async ({ browserPath, url, settleMs, timeoutMs, consent 
       chrome?.once('exit', () => reject(new CheckError('The browser closed unexpectedly.'))),
     );
     const cdp = connect(chrome.stdio[3] as Writable, chrome.stdio[4] as Readable);
-    const run = capture(cdp, url, settleMs, timeoutMs, consent);
+    const run = capture(cdp, url, settleMs, timeoutMs, consent, inspect);
     // Past the plan's own budget (timeoutMs to load, then settleMs, then the consent click), something
     // is stuck: give up rather than hang. Each settle is counted at its own cap rather than at
     // what the plan asked for, since a page still working past that is followed up to the cap.
@@ -433,11 +453,14 @@ const pickCookies = (cookies: CapturedCookie[]): CapturedCookie[] =>
     sameSite,
   }));
 
-/** Runs one fixed expression in the page. Anything the page throws or returns unusably reads as null. */
+/**
+ * Runs one fixed expression in the page, awaiting it if it returns a promise.
+ * Anything the page throws, returns unusably or takes too long over reads as null.
+ */
 const evaluate = async (cdp: Cdp, sessionId: string, expression: string): Promise<unknown> => {
   try {
     const answer = (await withTimeout(
-      cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: false }, sessionId),
+      cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId),
       5000,
       'evaluate',
     )) as { result?: { value?: unknown }; exceptionDetails?: unknown };
@@ -527,6 +550,7 @@ const capture = async (
   settleMs: number,
   timeoutMs: number,
   consentRequest?: ConsentRequest,
+  inspect?: string,
 ): Promise<PageLoad> => {
   const pageHost = new URL(url).hostname;
   const hosts = new Set<string>();
@@ -699,6 +723,10 @@ const capture = async (
   // its own, so a page that behaves differently between loads cannot invent a change.
   const arrival = { cookies: pickCookies(cookies), thirdPartyHosts: [...hosts] };
 
+  // Read here, on the settled page and before any consent press: the install
+  // check is about what the page loads on arrival, and a click could change it.
+  const inspected = inspect ? await evaluate(cdp, mainSession, inspect) : null;
+
   let consent: ConsentAttempt | null = null;
   if (consentRequest) {
     // Set before the press, not after: requests the click causes start arriving
@@ -758,5 +786,6 @@ const capture = async (
     loadTimedOut,
     settle,
     consent,
+    inspected,
   };
 };

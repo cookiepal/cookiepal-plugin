@@ -154,6 +154,8 @@ Only what it takes to count checks and store the result:
 - the **country** the check ran from, worked out from your IP address, which is **not stored**;
 - a **random install ID**, only if you agreed to share one.
 
+Asking CookiePal to confirm your banner is installed sends one more reading, and only when you ask for it. The page is loaded on **your** machine, never by CookiePal, and what goes up is the page's **origin and path**, **when it was read**, the **CookiePal banner script** found there with its query string stripped, that **script's tag** rebuilt from its `id`, `type`, `defer` and `async` attributes alone, and whether the page **could not be read** at all. Nothing else from the page goes with it, and the reading sets that domain's banner status in your CookiePal account.
+
 If you connect a CookiePal account with `/cookiepal:connect`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without an answer recorded on this machine, and in Claude Code's default permission mode it asks you to confirm a yes in its own dialog before the ID is sent. That dialog is skipped in bypass-permissions mode, and the hook does not run when hooks are turned off. Answering no on a later connect removes a link you made before.
 
 One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check stop-sharing` sends the install ID twice more, on its own, so the checks stored under it can be erased, and a third time if the first two came too close together. Nothing else accompanies it.
@@ -208,11 +210,11 @@ claude plugin marketplace remove cookiepal
 
 ## 📦 What is in this repository
 
-The plugin itself: the manifests, the `/cookiepal:check` and `/cookiepal:connect` commands, the `check-one-page` and `connect-account` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan and each result to that check.
+The plugin itself: the manifests, the `/cookiepal:check` and `/cookiepal:connect` commands, the `check-one-page`, `connect-account` and `verify-installation` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result and each install tag to that check and refuse an install reading no local run produced.
 
 Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its dependencies. Rebuild it with `pnpm build`; CI fails when it is out of date.
 
-`plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains` and `add_domain` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
+`plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains`, `add_domain`, `get_install_snippet` and `verify_installation` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
 
 ## 🤝 Contributing
 
