@@ -7,7 +7,7 @@
 
 <strong>Cookie Consent Made Easy, now inside Claude Code</strong>
 
-**Privacy made simple.** Check any page for the cookies and trackers that fire before consent, and find out what its banner's reject button actually does. Runs on your machine. No account.
+**Privacy made simple.** Check any page for the cookies and trackers that fire before consent, and find out what its banner's reject button actually does. Runs on your machine. No account needed to check.
 
 <!-- SHIELD GROUP -->
 
@@ -38,6 +38,7 @@
   - [👆 It only ever clicks one button per run](#-it-only-ever-clicks-one-button-per-run)
 - [🔐 What is sent to CookiePal](#-what-is-sent-to-cookiepal)
   - [🆔 The install ID](#-the-install-id)
+- [🔑 Connect a CookiePal account](#-connect-a-cookiepal-account)
 - [🔄 Update and uninstall](#-update-and-uninstall)
 - [📦 What is in this repository](#-what-is-in-this-repository)
 - [🤝 Contributing](#-contributing)
@@ -153,6 +154,8 @@ Only what it takes to count checks and store the result:
 - the **country** the check ran from, worked out from your IP address, which is **not stored**;
 - a **random install ID**, only if you agreed to share one.
 
+If you connect a CookiePal account with `/cookiepal:connect`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without an answer recorded on this machine, and in Claude Code's default permission mode it asks you to confirm a yes in its own dialog before the ID is sent. That dialog is skipped in bypass-permissions mode, and the hook does not run when hooks are turned off. Answering no on a later connect removes a link you made before.
+
 One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check stop-sharing` sends the install ID twice more, on its own, so the checks stored under it can be erased, and a third time if the first two came too close together. Nothing else accompanies it.
 
 **The page is loaded by you, on your machine. CookiePal never loads it.** Cookies are categorised locally against the open-source [`@cookiepal-oss/cookie-db`](https://www.npmjs.com/package/@cookiepal-oss/cookie-db) catalogue, so nothing is sent anywhere to be identified. The risk read is assembled locally too.
@@ -173,9 +176,19 @@ To stop sharing it and delete it:
 /cookiepal:check stop-sharing
 ```
 
-That also deletes the checks you already submitted: the plugin sends the ID to CookiePal twice, a few seconds apart, because a check stored just before can be missed by the first run, and a third time if the two came too close together. Once two of those runs, far enough apart, both confirm nothing is left under it, the plugin removes the ID from this machine. You are told how many went.
+That also deletes the checks you already submitted, and unlinks the ID from your CookiePal account if you connected one: the plugin sends the ID to CookiePal twice, a few seconds apart, because a check stored just before can be missed by the first run, and a third time if the two came too close together. Once two of those runs, far enough apart, both confirm nothing is left under it, the plugin removes the ID from this machine. You are told how many went.
 
 If the erasure does not go through, sharing still stops: the ID is never sent with a check again. It stays on this machine only because it is the only thing that can find those checks, so running the command again is safe, because it deletes only what is left, and you can also send the ID to [support@cookiepal.io](mailto:support@cookiepal.io) to have them erased. If the ID is already gone from this machine but you kept a copy, send it to [support@cookiepal.io](mailto:support@cookiepal.io) and we will erase anything left under it.
+
+## 🔑 Connect a CookiePal account
+
+The check never needs an account. To use CookiePal on a site you run, connect one:
+
+```
+/cookiepal:connect
+```
+
+A CookiePal page opens in your browser. If you are already signed in to CookiePal there, press Connect and you are done. If not, sign in, continue with Google, or create a free account (in a new tab), then come back and press Connect. Your password never passes through the terminal, and the plugin never sees it. If you shared an install ID, you are asked whether to link it to the account, every time you connect. The link is deleted after 180 days, when you answer no on a later connect, or straight away with `/cookiepal:check stop-sharing`.
 
 ## 🔄 Update and uninstall
 
@@ -193,11 +206,11 @@ claude plugin marketplace remove cookiepal
 
 ## 📦 What is in this repository
 
-The plugin itself: the manifests, the `/cookiepal:check` command, the `check-one-page` skill, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan and each result to that check.
+The plugin itself: the manifests, the `/cookiepal:check` and `/cookiepal:connect` commands, the `check-one-page` and `connect-account` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan and each result to that check.
 
 Plugins install from git with no build step, so `dist/check.mjs` is the committed bundle of `src/` and its dependencies. Rebuild it with `pnpm build`; CI fails when it is out of date.
 
-`plan_check` and `submit_check` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
+`plan_check`, `submit_check`, `forget_install` and `connect_account` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
 
 ## 🤝 Contributing
 
@@ -226,5 +239,5 @@ CookiePal is a product of [Westpoint](https://westpoint.io). Claude and Claude C
 [license-link]: ./LICENSE
 [claude-code-shield]: https://img.shields.io/badge/works_with-Claude_Code-EF8600?labelColor=222322&style=flat-square
 [claude-code-link]: https://claude.com/claude-code
-[no-account-shield]: https://img.shields.io/badge/account-not_required-EF8600?labelColor=222322&style=flat-square
+[no-account-shield]: https://img.shields.io/badge/account-not_required_to_check-EF8600?labelColor=222322&style=flat-square
 [no-account-link]: #-what-is-sent-to-cookiepal

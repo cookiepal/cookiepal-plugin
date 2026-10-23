@@ -1,5 +1,5 @@
 {
-  "description": "Keeps query strings off plan_check, hands each plan_check plan and each submit_check result to the local check, and records a confirmed forget_install so the install ID is never deleted locally while the checks it names are still stored.",
+  "description": "Keeps query strings off plan_check, keeps the install ID off connect_account unless it comes with a recorded answer to linking it and asks Claude Code to confirm a yes with the user, hands each plan_check plan and each submit_check result to the local check, and records a confirmed forget_install so the install ID is never deleted locally while the checks it names are still stored.",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,6 +8,16 @@
           {
             "type": "command",
             "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-plan",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^mcp__(plugin_cookiepal_)?cookiepal__connect_account$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "COOKIEPAL_DATA_DIR=\"${CLAUDE_PLUGIN_DATA}\" node \"${CLAUDE_PLUGIN_ROOT}/dist/check.mjs\" guard-connect",
             "timeout": 10
           }
         ]

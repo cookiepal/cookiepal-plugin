@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -131,7 +131,78 @@ export const decline = (dataDir: string, { force = false } = {}): ConsentState |
     save(dataDir, { asked: true, installId, sharing: false });
     return null;
   }
-  // The erasure record names the ID too, so it goes with it.
+  // The link answer and the erasure record name the ID too, and it is gone from
+  // this machine only once every copy is.
+  rmSync(join(dataDir, LINK_ANSWER), { force: true });
   if (installId) clearForgotten(dataDir, installId);
   return save(dataDir, { asked: true, installId: null, sharing: false });
+};
+
+const LINK_ANSWER = 'link-answer.json';
+
+/**
+ * How long an answer to the link question stands: long enough to sign in, or
+ * create an account, in the browser and come back, short enough that it is the
+ * answer to this connect and not one from weeks ago.
+ */
+export const LINK_ANSWER_TTL_MS = 30 * 60_000;
+
+/** The user's answer to linking this install ID to the account they connect. */
+export interface LinkAnswer {
+  installId: string;
+  link: boolean;
+  at: number;
+}
+
+/**
+ * Records the answer to the link question, a separate question from sharing
+ * the ID: agreeing to send it with checks is not agreeing to tie it to an
+ * account. Read by the PreToolUse hook on `connect_account`, so the ID goes
+ * with a link answer only when this machine has one from the user. Null when
+ * no ID is shared, since there is then nothing to link.
+ */
+export const recordLinkAnswer = (dataDir: string, link: boolean, now = Date.now()): LinkAnswer | null => {
+  const { installId, sharing } = readConsent(dataDir);
+  // An ID kept only to finish an erasure is not shared, so it is not linked either.
+  if (!installId || !sharing) return null;
+  // A yes is about to put server state under the ID again, as `prepare` does,
+  // so an erasure recorded before it no longer covers everything stored.
+  if (link) clearForgotten(dataDir, installId);
+  const answer = { installId, link, at: now };
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(join(dataDir, LINK_ANSWER), `${JSON.stringify(answer)}\n`, { mode: 0o600 });
+  return answer;
+};
+
+/** The answer, if one was given for a well-formed ID within the last half hour; otherwise null. */
+export const readLinkAnswer = (dataDir: string, now = Date.now()): LinkAnswer | null => {
+  try {
+    const saved = JSON.parse(readFileSync(join(dataDir, LINK_ANSWER), 'utf8'));
+    if (typeof saved.installId !== 'string' || !INSTALL_ID.test(saved.installId)) return null;
+    if (typeof saved.link !== 'boolean' || typeof saved.at !== 'number') return null;
+    if (saved.at > now || now - saved.at > LINK_ANSWER_TTL_MS) return null;
+    return { installId: saved.installId, link: saved.link, at: saved.at };
+  } catch {
+    return null;
+  }
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * What the PreToolUse hook on connect_account decides. The install ID goes
+ * only as the stored ID, with the link answer this machine recorded for it in
+ * the last half hour, so a yes to sharing can never be sent as a yes to
+ * linking. Claude records that answer, though, so a yes is also put to the
+ * user by Claude Code itself (`ask`): only they can approve the link. A no
+ * removes a link and needs nothing more; a call with no install ID links
+ * nothing and passes.
+ */
+export const connectDecision = (dataDir: string | null, input: unknown, now = Date.now()): 'allow' | 'ask' | 'deny' => {
+  if (!isRecord(input) || input.installId === undefined) return 'allow';
+  if (!dataDir || typeof input.installId !== 'string' || typeof input.linkInstall !== 'boolean') return 'deny';
+  const answer = readLinkAnswer(dataDir, now);
+  if (answer === null || answer.installId !== input.installId || answer.link !== input.linkInstall) return 'deny';
+  return input.linkInstall ? 'ask' : 'allow';
 };
