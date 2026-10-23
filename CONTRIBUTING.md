@@ -61,7 +61,7 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 | `src/gcm.ts` | Reads and validates a Google Consent Mode reading from the page |
 | `src/scanGuard.ts` | The decision behind the `upload_scan_report` guard |
 | `src/laws.ts` | The curated legal wording |
-| `hooks/hooks.json` | Hooks that keep query strings off `plan_check`, keep the install ID off `connect_account` without a recorded answer to linking it (and ask Claude Code to confirm a yes with the user, which bypass-permissions mode skips), hand each plan, result, install tag and `start_scan` answer to the local check, spawn the crawl a `start_scan` answer describes, and refuse a `verify_installation`, `upload_scan_report` or `check_gcm_status` call whose evidence no local run produced |
+| `hooks/hooks.json` | Hooks that keep query strings off `plan_check`, keep the install ID off `connect_account` without a recorded answer to linking it (and ask Claude Code to confirm a yes with the user, which bypass-permissions mode skips), ask the user before `set_banner_mode`, `customise_banner` or `regenerate_banner` changes the live banner, hand each plan, result, install tag and `start_scan` answer to the local check, spawn the crawl a `start_scan` answer describes, and refuse a `verify_installation`, `upload_scan_report` or `check_gcm_status` call whose evidence no local run produced |
 | `tests/` | Unit tests and browser tests against a local server; `tests/fixtures/stacks/` holds one sample repo per detected stack, plus the ambiguous and already-installed cases |
 | `.claude-plugin/` | The plugin and marketplace manifests |
 
