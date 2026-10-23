@@ -18,14 +18,30 @@ import { prepareUrl } from './url.ts';
  *   folder that check the same page at the same moment can still swap plans;
  *   each then loads the page it asked for, under the other's check ID.
  *
- * Each file is used once, and anything past the server's 30-minute plan window
- * is ignored and deleted.
+ * - The PostToolUse hook on `submit_check` stores the result the server
+ *   returned, so `assess` reads the real result from disk rather than having it
+ *   retyped into a command. The risk read is only worth anything if the numbers
+ *   in it are the ones the check produced.
+ *
+ * Plans and targets are used once. A result is not: it is only the check's own
+ * output coming back, so re-reading it replays nothing, and `assess` can be run
+ * again without starting the check over. Everything past the server's 30-minute
+ * plan window is ignored and deleted, except the rendered reads: those are the
+ * user's own copy, so the newest `KEPT_REPORTS` are kept whatever their age.
+ *
+ * Every folder is created 0700 and every file 0600, since they hold the pages
+ * checked and what was found on them.
  */
 
 const PLANS = 'plans';
 const TARGETS = 'targets';
+const RESULTS = 'results';
+const REPORTS = 'reports';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_AGE_MS = 30 * 60 * 1000;
+/** How many checks' rendered reads are kept. Older ones are deleted on the next sweep. */
+export const KEPT_REPORTS = 20;
+const PRIVATE_DIR = { recursive: true, mode: 0o700 } as const;
 
 export interface SavedPlan {
   /** The URL Claude sent to `plan_check`. */
@@ -35,7 +51,7 @@ export interface SavedPlan {
   savedAt: number;
 }
 
-const isCheckId = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
+export const isCheckId = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -95,7 +111,7 @@ const takeJson = (path: string): unknown => {
 };
 
 const write = (dir: string, name: string, value: unknown) => {
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, PRIVATE_DIR);
   liveFiles(dir);
   writeFileSync(join(dir, name), JSON.stringify(value), { mode: 0o600 });
 };
@@ -136,10 +152,85 @@ export const takePlanFor = (dataDir: string, page: string, notBefore: number): S
   return null;
 };
 
-/** Deletes every saved plan and URL past the 30-minute window, so a token in a query never lingers. */
+/** The rendered reads past the newest `KEPT_REPORTS`, deleted. Each check has its own folder. */
+const trimReports = (dir: string) => {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  const folders = names.flatMap((name) => {
+    try {
+      return [{ path: join(dir, name), mtime: statSync(join(dir, name)).mtimeMs }];
+    } catch {
+      return [];
+    }
+  });
+  folders.sort((a, b) => b.mtime - a.mtime);
+  for (const { path } of folders.slice(KEPT_REPORTS)) rmSync(path, { recursive: true, force: true });
+};
+
+/** Deletes every saved plan, URL and result past the 30-minute window, and all but the newest reports. */
 export const sweep = (dataDir: string): void => {
   liveFiles(join(dataDir, PLANS));
   liveFiles(join(dataDir, TARGETS));
+  liveFiles(join(dataDir, RESULTS));
+  trimReports(join(dataDir, REPORTS));
+};
+
+/**
+ * Stores the `submit_check` result from a PostToolUse payload, under the check
+ * ID that was submitted, which is the one the skill later asks `assess` for. A
+ * response naming a different check is not stored at all.
+ */
+export const saveResult = (dataDir: string, payload: unknown): boolean => {
+  if (!isRecord(payload) || !isRecord(payload.tool_input)) return false;
+  const { checkId } = payload.tool_input;
+  const result = planFrom(payload.tool_response);
+  if (!result || !isCheckId(checkId)) return false;
+  if (result.checkId !== undefined && result.checkId !== checkId) return false;
+  write(join(dataDir, RESULTS), `${checkId}.json`, result);
+  return true;
+};
+
+/**
+ * The result the hook saved for this check ID, if it is still inside the
+ * 30-minute window. Left in place once read, so the read can be repeated.
+ */
+export const readResult = (dataDir: string, checkId: string): Record<string, unknown> | null => {
+  if (!isCheckId(checkId)) return null;
+  const path = join(dataDir, RESULTS, `${checkId}.json`);
+  try {
+    if (isExpired(path)) {
+      rmSync(path, { force: true });
+      return null;
+    }
+    const saved: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    return isRecord(saved) ? saved : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Writes one rendered form of the read next to the result and returns its path,
+ * so what is published or opened is the rendered file, not a copy the model
+ * retyped. Every form is written on each run, whichever the user asked for:
+ * falling back from one to the next is then only a matter of naming a different
+ * path, with nothing to re-render and no second browser run.
+ */
+export const writeRendered = (dataDir: string, checkId: string, name: string, content: string): string | null => {
+  if (!isCheckId(checkId) || !/^[a-z]+\.[a-z]+$/.test(name)) return null;
+  const dir = join(dataDir, REPORTS, checkId);
+  try {
+    mkdirSync(dir, PRIVATE_DIR);
+    const path = join(dir, name);
+    writeFileSync(path, content, { mode: 0o600 });
+    return path;
+  } catch {
+    return null;
+  }
 };
 
 export interface SavedTarget {

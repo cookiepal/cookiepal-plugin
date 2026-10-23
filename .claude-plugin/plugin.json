@@ -1,6 +1,6 @@
 {
   "name": "cookiepal",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Check any page for cookies and trackers that fire before consent, and for what its banner's accept and reject buttons actually do, from Claude Code. No account needed.",
   "author": {
     "name": "CookiePal",
@@ -9,5 +9,5 @@
   "homepage": "https://cookiepal.io",
   "repository": "https://github.com/westpoint-io/claude-code-plugin",
   "license": "MIT",
-  "keywords": ["cookies", "consent", "gdpr", "ccpa", "lgpd", "privacy", "cookie-banner"]
+  "keywords": ["cookies", "consent", "gdpr", "ccpa", "lgpd", "law-25", "privacy", "cookie-banner"]
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -9,7 +9,17 @@ import { decline, readConsent, share } from '../src/consent.ts';
 import { MAX_PAGE_TEXT, pageText } from '../src/pageText.ts';
 import { type Limits, parsePlan } from '../src/plan.ts';
 import { buildConsent, buildConsentRun, buildSubmission, type CapturedCookie } from '../src/result.ts';
-import { savePlan, saveTarget, sweep, takePlanFor, takeTarget } from '../src/savedPlans.ts';
+import {
+  KEPT_REPORTS,
+  readResult,
+  savePlan,
+  saveResult,
+  saveTarget,
+  sweep,
+  takePlanFor,
+  takeTarget,
+  writeRendered,
+} from '../src/savedPlans.ts';
 import { prepareUrl } from '../src/url.ts';
 
 describe('prepareUrl', () => {
@@ -50,8 +60,13 @@ describe('categorise', () => {
     assert.equal(categorise('_gcl_au').category, 'advertisement');
   });
 
-  test('an unknown cookie is other', () => {
-    assert.deepEqual(categorise('definitely_not_a_known_cookie'), { category: 'other', vendor: null });
+  test('an unknown cookie is other, and not known', () => {
+    assert.deepEqual(categorise('definitely_not_a_known_cookie'), { category: 'other', vendor: null, known: false });
+  });
+
+  test('a cookie the catalogue files as other is known', () => {
+    assert.equal(categorise('__Secure-ENID').category, 'other');
+    assert.equal(categorise('__Secure-ENID').known, true);
   });
 
   test('a wildcard entry matches names that start with it', () => {
@@ -641,5 +656,119 @@ describe('buildConsent', () => {
 
     assert.equal(consent.tested, false);
     assert.equal(consent.bannerFound, false);
+  });
+});
+
+describe('submit_check results and the rendered forms', () => {
+  const dataDir = () => mkdtempSync(join(tmpdir(), 'cookiepal-results-'));
+  const CHECK_ID = '11111111-2222-4333-8444-555555555555';
+  const result = { checkId: CHECK_ID, page: 'https://example.com/', cookies: [], thirdPartyHosts: [] };
+  const payload = (over: Record<string, unknown> = {}) => ({
+    tool_name: 'submit_check',
+    tool_input: { checkId: CHECK_ID },
+    tool_response: { structuredContent: result },
+    ...over,
+  });
+
+  test('the hook stores the result, and it survives being read twice', () => {
+    const dir = dataDir();
+    assert.equal(saveResult(dir, payload()), true);
+    assert.deepEqual(readResult(dir, CHECK_ID), result);
+    assert.deepEqual(readResult(dir, CHECK_ID), result, 'a result is not consumed by reading it');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('the result is stored under the submitted check ID, and a response for another check is not stored', () => {
+    const dir = dataDir();
+    const { checkId: _, ...withoutId } = result;
+    assert.equal(saveResult(dir, payload({ tool_response: { structuredContent: withoutId } })), true);
+    assert.deepEqual(readResult(dir, CHECK_ID), withoutId);
+
+    const other = dataDir();
+    const elsewhere = { ...result, checkId: '99999999-2222-4333-8444-555555555555' };
+    assert.equal(saveResult(other, payload({ tool_response: { structuredContent: elsewhere } })), false);
+    assert.equal(readResult(other, CHECK_ID), null);
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(other, { recursive: true, force: true });
+  });
+
+  test('a response with no valid check ID is ignored rather than stored', () => {
+    const dir = dataDir();
+    assert.equal(saveResult(dir, payload({ tool_response: { structuredContent: { checkId: 'nope' } } })), false);
+    assert.equal(saveResult(dir, 'not an object'), false);
+    assert.equal(readResult(dir, CHECK_ID), null);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a result past the 30-minute window is not returned, and is deleted', () => {
+    const dir = dataDir();
+    saveResult(dir, payload());
+    const path = join(dir, 'results', `${CHECK_ID}.json`);
+    const old = Date.now() / 1000 - 31 * 60;
+    utimesSync(path, old, old);
+    assert.equal(readResult(dir, CHECK_ID), null);
+    assert.equal(existsSync(path), false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('readResult refuses anything that is not a check ID', () => {
+    const dir = dataDir();
+    saveResult(dir, payload());
+    for (const bad of ['', '../../etc/passwd', 'not-a-uuid']) assert.equal(readResult(dir, bad), null);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('writeRendered writes each form under the check, and refuses a bad id or name', () => {
+    const dir = dataDir();
+    const path = writeRendered(dir, CHECK_ID, 'report.html', '<p>hi</p>');
+    assert.ok(path);
+    assert.equal(readFileSync(path, 'utf8'), '<p>hi</p>');
+    assert.equal(path, join(dir, 'reports', CHECK_ID, 'report.html'));
+    assert.equal(writeRendered(dir, 'not-a-uuid', 'report.html', 'x'), null);
+    for (const bad of ['../escape.html', 'report', 'a/b.html', 'Report.HTML']) {
+      assert.equal(writeRendered(dir, CHECK_ID, bad, 'x'), null, bad);
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A check ID whose last block is `n`, so each one is a distinct, valid UUID. */
+  const idFor = (n: number) => `11111111-2222-4333-8444-${String(n).padStart(12, '0')}`;
+
+  test('a report the user was given a path to is kept past the 30-minute window', () => {
+    const dir = dataDir();
+    writeRendered(dir, CHECK_ID, 'report.html', 'x');
+    const old = Date.now() / 1000 - 24 * 60 * 60;
+    utimesSync(join(dir, 'reports', CHECK_ID), old, old);
+    sweep(dir);
+    assert.equal(existsSync(join(dir, 'reports', CHECK_ID, 'report.html')), true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test(`a sweep keeps the newest ${KEPT_REPORTS} reports and deletes the folders of older ones`, () => {
+    const dir = dataDir();
+    const now = Date.now() / 1000;
+    for (let n = 0; n <= KEPT_REPORTS; n++) {
+      for (const name of ['artifact.html', 'report.html', 'report.md']) writeRendered(dir, idFor(n), name, 'x');
+      // n = 0 is the oldest.
+      utimesSync(join(dir, 'reports', idFor(n)), now - (KEPT_REPORTS - n) * 60, now - (KEPT_REPORTS - n) * 60);
+    }
+    sweep(dir);
+    assert.equal(
+      existsSync(join(dir, 'reports', idFor(0))),
+      false,
+      'reports/ holds directories, so the sweep must recurse',
+    );
+    assert.equal(readdirSync(join(dir, 'reports')).length, KEPT_REPORTS);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('results and reports sit in folders only this user can open', () => {
+    const dir = dataDir();
+    saveResult(dir, payload());
+    writeRendered(dir, CHECK_ID, 'report.html', 'x');
+    for (const folder of [join(dir, 'results'), join(dir, 'reports'), join(dir, 'reports', CHECK_ID)]) {
+      assert.equal(statSync(folder).mode & 0o777, 0o700, folder);
+    }
+    rmSync(dir, { recursive: true, force: true });
   });
 });
