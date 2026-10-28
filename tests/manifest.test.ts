@@ -7,7 +7,7 @@ const root = join(import.meta.dirname, '..');
 const readJson = (path: string) => JSON.parse(readFileSync(join(root, path), 'utf8'));
 
 const SERVER_URL = 'https://mcp.cookiepal.io/mcp';
-const REPO = 'westpoint-io/claude-code-plugin';
+const REPO = 'cookiepal/cookiepal-plugin';
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 
 describe('.mcp.json', () => {
