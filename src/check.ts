@@ -14,6 +14,7 @@ import {
   recordLinkAnswer,
   share,
 } from './consent.ts';
+import { designColours } from './design.ts';
 import { GCM_READING_EXPRESSION, gcmDecision, parseGcmReading } from './gcm.ts';
 import { findTagExpression, NOT_FOUND, parseFoundTag, verifyDecision } from './install.ts';
 import { renderInventory, renderMarkdownDocument, renderTerminal } from './markdown.ts';
@@ -73,6 +74,7 @@ import { prepareUrl } from './url.ts';
  *   gcm stdin: the URL            → loads the page and returns the exact check_gcm_status reading
  *   guard-gcm stdin: hook JSON    → the PreToolUse hook on check_gcm_status refuses a reading no local run produced
  *   guard-banner stdin: hook JSON → the PreToolUse hook on the banner tools asks the user before a change goes live
+ *   design stdin: colours JSON    → the checked colors argument for customise_banner, with each pair's contrast
  *
  * The URL comes on stdin, so it never passes through shell quoting. Nothing from
  * the page or the server is ever put in a command: `ref` is a UUID this script
@@ -742,6 +744,22 @@ const gcmCheck = async (): Promise<Output> => {
   return { ok: true, ...run };
 };
 
+/**
+ * Checks the banner colours `match-site-design` proposes, read as JSON from
+ * stdin, and returns the exact `colors` argument `customise_banner` takes. It
+ * reads no file and calls nothing: the skill finds the tokens, this does the
+ * arithmetic.
+ */
+const designCheck = async (): Promise<Output> => {
+  let colours: unknown;
+  try {
+    colours = JSON.parse((await readStdin()).trim());
+  } catch {
+    return { ok: false, error: 'Expected a JSON object of colours, such as {"accent": "#2563eb"}.' };
+  }
+  return { ...designColours(colours) };
+};
+
 const main = async (): Promise<Output> => {
   const [command, argument, extra] = process.argv.slice(2);
   switch (command) {
@@ -761,13 +779,15 @@ const main = async (): Promise<Output> => {
       return scanCommand(argument, extra);
     case 'gcm':
       return gcmCheck();
+    case 'design':
+      return designCheck();
     default:
       return {
         ok: false,
         error:
           'Usage: check.mjs prepare | consent share|decline [--anyway]|status|link yes|no | run <ref> | ' +
           'verify <ref> | assess <checkId> [inventory] | output artifact|html|markdown|terminal | ' +
-          'scan status <scanId> | gcm | save-plan | save-result | save-snippet | save-scan | ' +
+          'scan status <scanId> | gcm | design | save-plan | save-result | save-snippet | save-scan | ' +
           'save-forgotten | guard-plan | guard-connect | guard-verify | guard-upload | guard-gcm | guard-banner',
       };
   }

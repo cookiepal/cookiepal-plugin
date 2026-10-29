@@ -41,6 +41,7 @@
 - [🔑 Connect a CookiePal account](#-connect-a-cookiepal-account)
 - [🕷️ Scan a domain](#️-scan-a-domain)
 - [🏷️ Install the banner](#️-install-the-banner)
+- [🎨 Match the banner to your design](#-match-the-banner-to-your-design)
 - [🔄 Update and uninstall](#-update-and-uninstall)
 - [📦 What is in this repository](#-what-is-in-this-repository)
 - [🤝 Contributing](#-contributing)
@@ -234,6 +235,16 @@ The change is shown as a diff and left uncommitted. **It never commits, never pu
 
 Once the change is deployed, run `/cookiepal:verify-installation` to confirm it is live. To just name the framework and head file without changing anything, run `/cookiepal:detect-stack`.
 
+## 🎨 Match the banner to your design
+
+```
+/cookiepal:match-site-design
+```
+
+Reads the repository's design tokens — Tailwind's config or `@theme`, CSS variables, MUI, Chakra, WordPress `theme.json` or Sass variables — and proposes banner colours that match, and a position when the repo gives a reason for one, such as a chat widget in a corner. Every colour is checked against **WCAG AA** contrast, including the white text on the banner's filled buttons, and one that falls short is darkened or lightened by as little as it takes, with the change shown. The config is read as text and never run.
+
+**Nothing is saved until you say yes** to the proposed values. A repository with no design tokens is told so, and its banner keeps the style it has.
+
 ## 🔄 Update and uninstall
 
 ```sh
@@ -250,7 +261,7 @@ claude plugin marketplace remove cookiepal
 
 ## 📦 What is in this repository
 
-The plugin itself: the manifests, the `/cookiepal:check-one-page`, `/cookiepal:connect-account`, `/cookiepal:verify-installation`, `/cookiepal:detect-stack`, `/cookiepal:install-banner`, `/cookiepal:run-scan` and `/cookiepal:check-gcm` commands, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack`, `install-banner`, `run-scan` and `check-gcm` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result, each install tag and each start_scan answer to that check, refuse an install reading, a scan report or a Consent Mode reading no local run produced, ask before a banner change goes live, and spawn the crawl a start_scan answer describes.
+The plugin itself: the manifests, the `/cookiepal:check-one-page`, `/cookiepal:connect-account`, `/cookiepal:verify-installation`, `/cookiepal:detect-stack`, `/cookiepal:install-banner`, `/cookiepal:run-scan` and `/cookiepal:check-gcm` commands, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack`, `install-banner`, `match-site-design`, `run-scan` and `check-gcm` skills, the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result, each install tag and each start_scan answer to that check, refuse an install reading, a scan report or a Consent Mode reading no local run produced, ask before a banner change goes live, and spawn the crawl a start_scan answer describes.
 
 Plugins install from git with no build step, so `dist/check.mjs` and `dist/scan.mjs` are the committed bundles of `src/` and its dependencies. Rebuild them with `pnpm build`; CI fails when either is out of date. `dist/scan.mjs` is the detached process a scan runs in: it installs `@cookiepal-oss/cli`'s crawl engine into the plugin's own data folder on first use rather than bundling Crawlee or Puppeteer into the plugin itself.
 
