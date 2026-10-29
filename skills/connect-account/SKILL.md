@@ -1,6 +1,7 @@
 ---
 name: connect-account
-description: Connects Claude Code to the user's CookiePal account, opening sign-in, or sign-up for someone without an account, in their browser, then says which account and organisation it is connected to. Use when the user runs /cookiepal:connect-account, asks to sign in or log in to CookiePal, to connect or link their CookiePal account, to create a CookiePal account, or asks which CookiePal account Claude Code is connected to.
+description: Connect Claude Code to your CookiePal account, or create one
+when_to_use: Connects Claude Code to the user's CookiePal account, opening sign-in, or sign-up for someone without an account, in their browser, then says which account and organisation it is connected to. Use when the user runs /cookiepal:connect-account, asks to sign in or log in to CookiePal, to connect or link their CookiePal account, to create a CookiePal account, or asks which CookiePal account Claude Code is connected to.
 ---
 
 # Connect a CookiePal account

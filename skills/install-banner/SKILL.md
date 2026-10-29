@@ -1,6 +1,8 @@
 ---
 name: install-banner
-description: Puts the CookiePal banner tag into a site's own repository, as early in the page head as its framework allows, then shows the diff and stops without committing anything. Use when the user runs /cookiepal:install-banner, asks to install, add or set up the CookiePal banner in their code, or asks Claude to add the CookiePal script to their site.
+description: Put the CookiePal banner tag into this repository's page head
+when_to_use: Puts the CookiePal banner tag into a site's own repository, as early in the page head as its framework allows, then shows the diff and stops without committing anything. Use when the user runs /cookiepal:install-banner, asks to install, add or set up the CookiePal banner in their code, or asks Claude to add the CookiePal script to their site.
+argument-hint: '[domain]'
 ---
 
 # Put the banner tag in the page head

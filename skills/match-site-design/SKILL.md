@@ -1,7 +1,8 @@
 ---
 name: match-site-design
-description: Reads a site's design tokens from its repository (Tailwind config, CSS variables, theme files), proposes CookiePal banner colours and a position that match, checks them against WCAG AA contrast, and saves them only once the user confirms. Use when the user runs /cookiepal:match-site-design, asks to make the CookiePal banner match their site, brand, theme or colours, or asks Claude to style or colour their cookie banner from their code.
-argument-hint: [domain]
+description: Match your CookiePal banner's colours and position to your site's design
+when_to_use: Reads a site's design tokens from its repository (Tailwind config, CSS variables, theme files), proposes CookiePal banner colours and a position that match, checks them against WCAG AA contrast, and saves them only once the user confirms. Use when the user runs /cookiepal:match-site-design, asks to make the CookiePal banner match their site, brand, theme or colours, or asks Claude to style or colour their cookie banner from their code.
+argument-hint: '[domain]'
 ---
 
 # Match the banner to the site's design

@@ -1,6 +1,8 @@
 ---
 name: run-scan
-description: Crawls one of the user's connected CookiePal domains on this machine, using the open-source crawl engine, and uploads what it found as a cookie report labelled a local scan. Use when the user runs /cookiepal:run-scan, asks to scan their site, crawl their site, run a scan of their domain in CookiePal, update their CookiePal cookie report, or asks why their CookiePal report is out of date.
+description: Crawl one of your CookiePal domains on this machine and upload the cookie report
+when_to_use: Crawls one of the user's connected CookiePal domains on this machine, using the open-source crawl engine, and uploads what it found as a cookie report labelled a local scan. Use when the user runs /cookiepal:run-scan, asks to scan their site, crawl their site, run a scan of their domain in CookiePal, update their CookiePal cookie report, or asks why their CookiePal report is out of date.
+argument-hint: '[domain]'
 ---
 
 # Scan a domain and upload the report
