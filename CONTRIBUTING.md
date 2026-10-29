@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for taking an interest. This repository holds the CookiePal plugin for Claude Code: the commands, the skills, the local check and the curated legal wording. The hosted MCP server it talks to is not open source, so everything here runs on the user's own machine.
+Thanks for taking an interest. This repository holds the CookiePal plugin for Claude Code: the skills, the local check and the curated legal wording. The hosted MCP server it talks to is not open source, so everything here runs on the user's own machine.
 
 ## Getting set up
 
@@ -21,7 +21,7 @@ claude plugin install cookiepal@cookiepal
 
 | Command | What it does |
 | --- | --- |
-| `pnpm build` | Bundles `src/` into `dist/check.mjs` and `dist/scan.mjs` |
+| `pnpm build` | Runs `scripts/build.ts`: bundles `src/` into `dist/check.mjs` and `dist/scan.mjs`, tldts into `dist/tldts.mjs`, and writes the cookie catalogue to `dist/cookies.json` |
 | `pnpm lint` | Biome check |
 | `pnpm lint:fix` | Biome check, writing fixes |
 | `pnpm typecheck` | `tsc` |
@@ -34,31 +34,28 @@ CI runs lint, typecheck, the `dist/` freshness check, manifest validation, the t
 
 Claude Code installs plugins straight from git with no build step, so the bundles the skills actually run have to be in the repository. `dist/check.mjs` and `dist/scan.mjs` are generated from `src/` and its dependencies. `dist/scan.mjs` is the detached process a local scan runs in; it never bundles `@cookiepal-oss/cli`, which it installs into the plugin's own data folder at runtime instead.
 
+No file in `dist/` may be over 240 KiB, and the tests fail when one is, because the plugin directory holds any file over 256 KiB for a reviewer. That is why tldts and the `@cookiepal-oss/cookie-db` catalogue sit in their own files rather than in both bundles, and why `dist/cookies.json` keeps only the name, vendor, category and wildcard of each cookie.
+
 **Run `pnpm build` and commit `dist/` with any change to `src/`.** CI fails when the committed bundle does not match the source, including when it has been deleted or left uncommitted. Never hand-edit `dist/`.
 
 ## How the pieces fit
 
 | Path | What lives there |
 | --- | --- |
-| `commands/check-one-page.md` | The `/cookiepal:check-one-page` command |
-| `skills/check-one-page/SKILL.md` | The skill the command follows |
-| `commands/connect-account.md` | The `/cookiepal:connect-account` command |
-| `skills/connect-account/SKILL.md` | The skill it follows: connecting a CookiePal account, and the separate question of linking the install ID to it |
-| `commands/verify-installation.md` | The `/cookiepal:verify-installation` command |
-| `skills/verify-installation/SKILL.md` | The skill for the install tag and for confirming the banner is live from a page load on this machine |
-| `commands/detect-stack.md` | The `/cookiepal:detect-stack` command |
-| `skills/detect-stack/SKILL.md` | The skill it follows: naming the framework and the file that renders the page head |
+| `skills/check-one-page/SKILL.md` | The skill behind `/cookiepal:check-one-page` |
+| `skills/connect-account/SKILL.md` | The skill behind `/cookiepal:connect-account`: connecting a CookiePal account, and the separate question of linking the install ID to it |
+| `skills/verify-installation/SKILL.md` | The skill behind `/cookiepal:verify-installation`, for the install tag and for confirming the banner is live from a page load on this machine |
+| `skills/detect-stack/SKILL.md` | The skill behind `/cookiepal:detect-stack`: naming the framework and the file that renders the page head |
 | `skills/detect-stack/references/stacks.md` | The detection rules, as one table: `tests/stacks.test.ts` reads the same table the skill does |
-| `commands/install-banner.md` | The `/cookiepal:install-banner` command |
-| `skills/install-banner/SKILL.md` | The skill it follows: putting the tag in the head as early as the framework allows, and stopping at the diff |
-| `commands/run-scan.md` | The `/cookiepal:run-scan` command |
-| `skills/run-scan/SKILL.md` | The skill it follows: starting a local crawl, polling it, and uploading the report it produces |
-| `commands/check-gcm.md` | The `/cookiepal:check-gcm` command |
-| `skills/check-gcm/SKILL.md` | The skill it follows: reading Google Consent Mode on this machine and reporting the server's verdict |
+| `skills/install-banner/SKILL.md` | The skill behind `/cookiepal:install-banner`: putting the tag in the head as early as the framework allows, and stopping at the diff |
+| `skills/run-scan/SKILL.md` | The skill behind `/cookiepal:run-scan`: starting a local crawl, polling it, and uploading the report it produces |
+| `skills/check-gcm/SKILL.md` | The skill behind `/cookiepal:check-gcm`: reading Google Consent Mode on this machine and reporting the server's verdict |
+| `skills/match-site-design/SKILL.md` | The skill behind `/cookiepal:match-site-design`, for proposing banner colours and a position from the repo's design tokens, saved only on a yes |
 | `src/` | The local check: browser control, cookie capture, banner matching, categorisation, the install-tag finder, the risk read and its rendered forms |
 | `src/scan.ts` | The detached process a local scan runs in (`dist/scan.mjs`): installs the crawl engine, runs it, and categorises what it finds |
 | `src/engine.ts` | Installs `@cookiepal-oss/cli`'s crawl engine into the plugin's own data folder on first use |
 | `src/gcm.ts` | Reads and validates a Google Consent Mode reading from the page |
+| `src/design.ts` | Reads colours as CSS writes them and checks each pair the banner draws against WCAG AA, for `CHECK design` |
 | `src/scanGuard.ts` | The decision behind the `upload_scan_report` guard |
 | `src/laws.ts` | The curated legal wording |
 | `hooks/hooks.json` | Hooks that keep query strings off `plan_check`, keep the install ID off `connect_account` without a recorded answer to linking it (and ask Claude Code to confirm a yes with the user, which bypass-permissions mode skips), ask the user before `set_banner_mode`, `customise_banner` or `regenerate_banner` changes the live banner, hand each plan, result, install tag and `start_scan` answer to the local check, spawn the crawl a `start_scan` answer describes, and refuse a `verify_installation`, `upload_scan_report` or `check_gcm_status` call whose evidence no local run produced |
@@ -68,6 +65,8 @@ Claude Code installs plugins straight from git with no build step, so the bundle
 ## Things worth knowing before you change something
 
 **Everything read from a checked page is untrusted.** It can be a prompt injection aimed at whoever is running the check. Page strings reach the model marked as page content and capped in length, cookie values are never read, and the check never navigates to a URL it found on a page. Keep it that way.
+
+**A skill is its own command.** `skills/<name>/SKILL.md` runs as `/cookiepal:<name>`, with its `argument-hint` in the frontmatter. Its `description` is the one line shown beside the command in the `/` menu; what tells Claude when to use the skill goes in `when_to_use`, which Claude sees after the description. Do not add a `commands/<name>.md` beside it: a command with a skill's name stands in for the skill, and the skill's instructions never load.
 
 **The legal wording is fixed text, not a prompt.** Every sentence the risk read prints about a law ships with the plugin and is reviewed before release, so the explanation cannot drift or be rephrased by the model. Changing `src/laws.ts` means a release, and the wording has to stay consistent with the explainers on cookiepal.io.
 

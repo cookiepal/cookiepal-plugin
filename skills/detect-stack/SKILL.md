@@ -1,6 +1,7 @@
 ---
 name: detect-stack
-description: Reads a repository and names the framework it is built with and the file that renders the page head, covering Next, Nuxt, Astro, Vite, Remix, SvelteKit, a custom build and a Shopify theme. Use when the user runs /cookiepal:detect-stack, asks which framework a repository uses, asks where its page head is rendered, or asks where a script tag should go in their site.
+description: Name the framework and the file that renders your site's page head
+when_to_use: Reads a repository and names the framework it is built with and the file that renders the page head, covering Next, Nuxt, Astro, Vite, Remix, SvelteKit, a custom build and a Shopify theme. Use when the user runs /cookiepal:detect-stack, asks which framework a repository uses, asks where its page head is rendered, or asks where a script tag should go in their site.
 ---
 
 # Name a repository's framework and its head file
