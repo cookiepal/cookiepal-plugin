@@ -7,7 +7,7 @@
     "url": "https://cookiepal.io"
   },
   "homepage": "https://cookiepal.io",
-  "repository": "https://github.com/westpoint-io/claude-code-plugin",
+  "repository": "https://github.com/cookiepal/cookiepal-plugin",
   "license": "MIT",
   "keywords": ["cookies", "consent", "gdpr", "ccpa", "lgpd", "law-25", "privacy", "cookie-banner"]
 }

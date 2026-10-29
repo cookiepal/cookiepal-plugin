@@ -66,7 +66,7 @@ Paste this into Claude Code and it will install CookiePal itself:
 
 ```
 Install the CookiePal plugin for me. Run these in Bash:
-  claude plugin marketplace add westpoint-io/claude-code-plugin
+  claude plugin marketplace add cookiepal/cookiepal-plugin
   claude plugin install cookiepal@cookiepal
 Then tell me to run /reload-plugins myself, and what to expect from /mcp.
 ```
@@ -76,7 +76,7 @@ Or do it yourself:
 - **In Claude Code**
 
   ```
-  /plugin marketplace add westpoint-io/claude-code-plugin
+  /plugin marketplace add cookiepal/cookiepal-plugin
   /plugin install cookiepal@cookiepal
   /reload-plugins
   ```
@@ -84,7 +84,7 @@ Or do it yourself:
 - **From your terminal**
 
   ```sh
-  claude plugin marketplace add westpoint-io/claude-code-plugin
+  claude plugin marketplace add cookiepal/cookiepal-plugin
   claude plugin install cookiepal@cookiepal
   ```
 
@@ -97,6 +97,8 @@ Run `/mcp` and you should see `plugin:cookiepal:cookiepal` listed as connected. 
 ```
 
 Requires [Node.js](https://nodejs.org) 24+ and Google Chrome, Microsoft Edge, Brave or Chromium. If your browser lives somewhere unusual, point `COOKIEPAL_BROWSER` at its executable.
+
+For a step-by-step walkthrough of every command and how to read its result, see the [CookiePal for Claude Code guide](https://cookiepal.io/help-guide/installation/cookiepal-for-claude-code) in the CookiePal Help Guide.
 
 ## ✨ What a check tells you
 
