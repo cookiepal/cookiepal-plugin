@@ -595,7 +595,7 @@ const capture = async (
       const current = cookies
         .map(({ name, domain, path }) => `${name}\u0000${domain}\u0000${path}`)
         .sort()
-        .join('\u0001');
+        .join('\n');
       if (current !== cookieFingerprint) {
         cookieFingerprint = current;
         sawActivity();

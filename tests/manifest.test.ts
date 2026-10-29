@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, test } from 'node:test';
 
@@ -48,6 +48,57 @@ describe('plugin and marketplace manifests', () => {
   // plugin.json wins over the marketplace entry, so a second version would only drift.
   test('the version lives only in plugin.json', () => {
     assert.equal(marketplace.plugins[0].version, undefined);
+  });
+});
+
+describe('the skills are the commands', () => {
+  const skills = readdirSync(join(root, 'skills'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const frontmatters = new Map(
+    skills.map((skill) => {
+      const text = readFileSync(join(root, 'skills', skill, 'SKILL.md'), 'utf8');
+      return [skill, text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)?.[1] ?? ''];
+    }),
+  );
+  const field = (skill: string, key: string) =>
+    frontmatters.get(skill)?.match(new RegExp(`^${key}: (.*?)\\r?$`, 'm'))?.[1];
+
+  // A command file with a skill's name stands in for the skill: asking for the
+  // skill then returns "already loaded above" and its SKILL.md never loads.
+  test('no command file has the name of a skill', () => {
+    const commands = existsSync(join(root, 'commands')) ? readdirSync(join(root, 'commands')) : [];
+    for (const file of commands) {
+      const name = file.replace(/\.md$/, '');
+      assert.ok(!skills.includes(name), `commands/${file} hides skills/${name}`);
+    }
+  });
+
+  // The name is the /cookiepal:<name> command, so changing it renames the command.
+  test('every skill is named after its folder', () => {
+    for (const skill of skills) assert.equal(field(skill, 'name'), skill);
+  });
+
+  test('every skill that takes an argument has an argument-hint', () => {
+    for (const skill of [
+      'check-one-page',
+      'check-gcm',
+      'install-banner',
+      'run-scan',
+      'verify-installation',
+      'match-site-design',
+    ]) {
+      assert.ok(field(skill, 'argument-hint'), `skills/${skill}/SKILL.md has no argument-hint`);
+    }
+  });
+
+  // Unquoted, `[domain]` is a YAML list, not the hint shown after the command.
+  test('every argument-hint is quoted', () => {
+    for (const skill of skills) {
+      const hint = field(skill, 'argument-hint');
+      if (hint === undefined) continue;
+      assert.match(hint, /^(?:'(?:[^']|'')+'|"[^"]+")$/, `skills/${skill}/SKILL.md`);
+    }
   });
 });
 
@@ -127,8 +178,8 @@ describe('repository contents', () => {
 
   // The public suffix list that tldts bundles names thousands of other companies'
   // hosts, `amazonaws.com` and `*-staging` among them. It is public data, not
-  // ours, so its section of the bundle is the one part left out of this check.
-  const PUBLIC_SUFFIX_LIST = /\/\/ node_modules\/\.pnpm\/tldts@[^\n]*\n[\s\S]*?(?=\n\/\/ (?:node_modules|src)\/)/g;
+  // ours, so its section of dist/tldts.mjs is the one part left out of this check.
+  const PUBLIC_SUFFIX_LIST = /\/\/ node_modules\/\.pnpm\/tldts@[^\n]*\n[\s\S]*?(?=\n\/\/ (?:node_modules|src)\/|$)/g;
 
   test('no internal hostnames or AWS endpoints', () => {
     for (const { path, text } of files) {
@@ -139,6 +190,24 @@ describe('repository contents', () => {
       for (const pattern of FORBIDDEN) {
         assert.doesNotMatch(withoutSuffixList, pattern, `${path} matches ${pattern}`);
       }
+    }
+  });
+
+  // The plugin directory holds a submission for a reviewer when a file is over 256 KiB.
+  test('every dist/ file is under 240 KiB', () => {
+    for (const name of readdirSync(join(root, 'dist'))) {
+      const { size } = statSync(join(root, 'dist', name));
+      assert.ok(size <= 240 * 1024, `dist/${name} is ${size} bytes; move data or a dependency out of the bundle`);
+    }
+  });
+
+  // It holds any file that is not text too, and esbuild writes some escapes, such as `\u0001`, as the raw byte.
+  test('every dist/ file is text', () => {
+    for (const name of readdirSync(join(root, 'dist'))) {
+      const text = readFileSync(join(root, 'dist', name), 'utf8');
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what this looks for.
+      const control = text.match(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/);
+      assert.equal(control, null, `dist/${name} has a raw control character; escape it differently in src/`);
     }
   });
 });
