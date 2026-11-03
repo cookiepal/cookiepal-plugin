@@ -97,7 +97,7 @@ Run `/mcp` and you should see `plugin:cookiepal:cookiepal` listed as connected. 
 /cookiepal:check-one-page https://example.com
 ```
 
-Requires [Node.js](https://nodejs.org) 24+ and Google Chrome, Microsoft Edge, Brave or Chromium. If your browser lives somewhere unusual, point `COOKIEPAL_BROWSER` at its executable.
+Requires [Node.js](https://nodejs.org) 18 or later and Google Chrome, Microsoft Edge, Brave or Chromium. If your browser lives somewhere unusual, point `COOKIEPAL_BROWSER` at its executable.
 
 For a step-by-step walkthrough of every command and how to read its result, see the [CookiePal for Claude Code guide](https://cookiepal.io/help-guide/installation/cookiepal-for-claude-code) in the CookiePal Help Guide.
 
@@ -263,9 +263,9 @@ claude plugin marketplace remove cookiepal
 
 ## 📦 What is in this repository
 
-The plugin itself: the manifests, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack`, `install-banner`, `match-site-design`, `run-scan` and `check-gcm` skills, each run as its own command (`/cookiepal:check-one-page` and so on), the local check in `src/`, the curated legal wording in `src/laws.ts`, and the hooks that hand each plan, each result, each install tag and each start_scan answer to that check, refuse an install reading, a scan report or a Consent Mode reading no local run produced, ask before a banner change goes live, and spawn the crawl a start_scan answer describes.
+The plugin itself: the manifests, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack`, `install-banner`, `match-site-design`, `run-scan` and `check-gcm` skills, each run as its own command (`/cookiepal:check-one-page` and so on), the local check from `@cookiepal-oss/agent` (copied into `dist/`), the curated legal wording in that package's `src/laws.ts`, and the hooks that hand each plan, each result, each install tag and each start_scan answer to that check, refuse an install reading, a scan report or a Consent Mode reading no local run produced, ask before a banner change goes live, and spawn the crawl a start_scan answer describes.
 
-Plugins install from git with no build step, so `dist/check.mjs` and `dist/scan.mjs` are the committed bundles of `src/` and its dependencies, beside `dist/tldts.mjs` and the `@cookiepal-oss/cookie-db` catalogue in `dist/cookies.json`. Rebuild them with `pnpm build`; CI fails when any of them is out of date. `dist/scan.mjs` is the detached process a scan runs in: it installs `@cookiepal-oss/cli`'s crawl engine into the plugin's own data folder on first use rather than bundling Crawlee or Puppeteer into the plugin itself.
+Plugins install from git with no build step, so `dist/` holds a committed copy of the bundles from `@cookiepal-oss/agent`, the package in the cookiepal-oss repository that carries the plugin's local steps. Claude Code's skills and hooks run that copy. Rebuild `dist/` with `pnpm build`; CI fails when it is out of date. `dist/scan.mjs` is the detached process a scan runs in: it installs `@cookiepal-oss/cli`'s crawl engine into the plugin's own data folder on first use rather than bundling Crawlee or Puppeteer into the plugin itself.
 
 `plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains`, `add_domain`, `get_install_snippet`, `verify_installation`, `start_scan`, `upload_scan_report`, `get_scan_report`, `classify_cookies`, `check_gcm_status`, `set_banner_mode`, `customise_banner` and `regenerate_banner` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
 
