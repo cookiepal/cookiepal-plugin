@@ -16,10 +16,10 @@ CookiePal never loads the site. Nothing is crawled on CookiePal's side: the page
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-npx -y @cookiepal-oss/agent@0.2.0
+npx -y @cookiepal-oss/agent@0.2.1
 ```
 
-**In Codex:** run every `CHECK` command outside the sandbox, by requesting escalated permissions for it with `prefix_rule` set to `["npx", "-y", "@cookiepal-oss/agent@0.2.0"]`, so one approval covers every later `CHECK`. Say why: it saves the check's files in `~/.cookiepal` and loads pages in a browser, which the sandbox blocks. If Codex rejects the request without asking the user, tell them to choose "Ask for approval" under `/permissions` and ask again, and stop. If the user declines, tell them the check can't run inside the sandbox, and stop. Never run a `CHECK cursor-hooks` command from Codex.
+**In Codex:** run every `CHECK` command outside the sandbox, by requesting escalated permissions for it with `prefix_rule` set to `["npx", "-y", "@cookiepal-oss/agent@0.2.1"]`, so one approval covers every later `CHECK`. Say why: it saves the check's files in `~/.cookiepal` and loads pages in a browser, which the sandbox blocks. If Codex rejects the request without asking the user, tell them to choose "Ask for approval" under `/permissions` and ask again, and stop. If the user declines, tell them the check can't run inside the sandbox, and stop. Never run a `CHECK cursor-hooks` command from Codex.
 
 Run each `CHECK` exactly as shown. Pass the URL only through the quoted heredoc, never on the command line, and never write JSON into a command. If any step prints `"ok": false`, tell the user its `error` in plain words and stop.
 

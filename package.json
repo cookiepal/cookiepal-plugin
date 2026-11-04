@@ -15,7 +15,7 @@
     "node": ">=24"
   },
   "dependencies": {
-    "@cookiepal-oss/agent": "0.2.0"
+    "@cookiepal-oss/agent": "0.2.1"
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "2.1.282",

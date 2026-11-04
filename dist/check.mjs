@@ -1342,13 +1342,17 @@ var normalizeHookPayload = (raw, env) => {
   };
 };
 var toolOf = (payload) => typeof payload.tool_name === "string" ? payload.tool_name.split("__").at(-1) ?? "" : "";
-var CODEX_ASK_SUFFIX = " Codex cannot ask the user from a hook, so this call was stopped: ask the user yourself, and make the change in the CookiePal dashboard or in Claude Code or Cursor if they confirm.";
+var cursorDecision = (permission, reason) => JSON.stringify({ permission, user_message: reason, agent_message: reason });
 var decisionOutput = (client, permission, reason) => {
-  if (client === "cursor") {
-    return JSON.stringify({ permission, user_message: reason, agent_message: reason });
-  }
-  const decision = client === "codex" && permission === "ask" ? { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason + CODEX_ASK_SUFFIX } : { hookEventName: "PreToolUse", permissionDecision: permission, permissionDecisionReason: reason };
-  return JSON.stringify({ hookSpecificOutput: decision });
+  if (client === "cursor") return cursorDecision(permission, reason);
+  if (client === "codex" && permission === "ask") return null;
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: permission,
+      permissionDecisionReason: reason
+    }
+  });
 };
 var CURSOR_ALLOW = JSON.stringify({ permission: "allow" });
 
@@ -1361,7 +1365,7 @@ var LAUNCHER = /[\\/]cookiepal-hook\.(?:sh|cmd)"/;
 var EARLIER_COPY = /[\\/]\.cookiepal[\\/]agent[\\/]/;
 var launcherFile = (paths) => join3(dirname(paths.hooksFile), isWindows(paths) ? "cookiepal-hook.cmd" : "cookiepal-hook.sh");
 var NO_NODE_REASON = "CookiePal could not find Node.js 18 or later to check this call, so it was stopped. Run a CookiePal check to repair the CookiePal hooks.";
-var NO_NODE_DENY = decisionOutput("cursor", "deny", NO_NODE_REASON);
+var NO_NODE_DENY = cursorDecision("deny", NO_NODE_REASON);
 var NODE_18_OR_LATER = "process.exit(+process.versions.node.split('.')[0] >= 18 ? 0 : 1)";
 var POSIX_NODES = [
   '"$(command -v node 2>/dev/null)"',
@@ -2803,7 +2807,7 @@ var pluginVersion = () => {
     const manifest = new URL("../.claude-plugin/plugin.json", import.meta.url);
     return JSON.parse(readFileSync6(manifest, "utf8")).version ?? null;
   } catch {
-    return true ? "0.2.0" : null;
+    return true ? "0.2.1" : null;
   }
 };
 var HOME_DATA_DIR = join6(homedir(), ".cookiepal", "plugin-data");
@@ -3231,7 +3235,7 @@ var cursorHookPaths = () => ({
   agentDir: join6(homedir(), ".cookiepal", "agent"),
   distDir: fileURLToPath(new URL(".", import.meta.url)),
   node: process.execPath,
-  version: true ? "0.2.0" : "dev"
+  version: true ? "0.2.1" : "dev"
 });
 var cursorHooks = (action) => {
   const paths = cursorHookPaths();
@@ -3289,7 +3293,8 @@ var GUARD_REASON = "plan_check takes only a page as the check's prepare step ret
 var GUARD_ID_REASON = "plan_check may carry an installId only while the user is sharing it, and only the one prepare returned. Sharing has stopped or the ID is not this machine's, so leave installId out.";
 var decide = (permission, reason) => {
   decided = true;
-  process.stdout.write(`${decisionOutput(hookClient, permission, reason)}
+  const output2 = decisionOutput(hookClient, permission, reason);
+  if (output2 !== null) process.stdout.write(`${output2}
 `);
 };
 var deny = (reason = GUARD_REASON) => decide("deny", reason);
