@@ -20,15 +20,23 @@ npx -y @cookiepal-oss/agent@0.2.0
 
 ## Steps
 
-### 1. Connect without the install ID
+### 1. Ask before linking the install ID
 
-In Codex the install ID is never linked to an account: linking needs the user to confirm it from a hook, and Codex hooks cannot ask. Connect without it in step 2, and do not ask about linking.
+Run `CHECK consent status`. It changes nothing. If it returns no `installId`, or `sharing` is false, the ID is not shared: connect without it in step 2, and do not ask about sharing here. Never run `CHECK consent share` from this skill.
+
+If there is an `installId`, the user agreed to share it to count unique installs. Linking it to an account is a different use, and agreeing to share it is not agreeing to link it, so ask this every time, with "No" as the default and first option:
+
+> Link your shared install ID to this CookiePal account? It lets CookiePal see that this install's checks led to an account. The link is deleted after 180 days, if you answer no next time you connect, or straight away by asking to stop sharing your CookiePal install ID. Connecting works either way.
+
+Options: **No, don't link it** · **Yes, link it**
+
+Record the answer: `CHECK consent link yes` after a clear yes, `CHECK consent link no` for anything else, including no answer. Never record a yes the user did not give. A hook on `connect_account` refuses the install ID unless it comes with the answer recorded here, and for a yes Codex may ask the user to confirm before the call goes out. If that call is denied, whether by the user or by the permission mode, do not treat it as a no: call `connect_account` again without `installId`, which leaves any link as it was, and tell the user the install ID could not be linked this time.
 
 ### 2. Connect
 
-Call the cookiepal server's `connect_account` tool. Send neither `installId` nor `linkInstall`.
+Call the cookiepal server's `connect_account` tool. With an `installId` from step 1, send it with `linkInstall` set to the recorded answer: `true` for yes, `false` for no. A no also removes a link made on an earlier connect. Without an `installId`, send neither.
 
-If the client is not signed in, the call opens CookiePal's connect page in the browser instead of answering. Tell the user what to expect there: if they are already signed in to CookiePal in that browser, they press **Connect as** their email and that is all. Otherwise they sign in (or continue with Google) or create a free account, which open in a new tab, then come back to the connect page and press Connect. Codex is connected when they do. Wait for the user to say they have pressed Connect, then call `connect_account` once more. That second answer is the one step 3 reports.
+If the client is not signed in, the call opens CookiePal's connect page in the browser instead of answering. Tell the user what to expect there: if they are already signed in to CookiePal in that browser, they press **Connect as** their email and that is all. Otherwise they sign in (or continue with Google) or create a free account, which open in a new tab, then come back to the connect page and press Connect. Codex is connected when they do. Wait for the user to say they have pressed Connect, then call `connect_account` once more with the same `installId` and `linkInstall` as before (the answer stands for half an hour; if the hook refuses the call because it has run out, ask the link question again and record the new answer, never drop the `installId` to get past it). That second answer is the one step 3 reports.
 
 If the call fails because sign-in is needed and no browser opened, tell the user to run `codex mcp login cookiepal` in a terminal, and then ask for the CookiePal connect-account skill again. Do not retry in a loop.
 
@@ -36,6 +44,6 @@ If it fails with a message from CookiePal, such as an account that has no organi
 
 ### 3. Report
 
-Say who Codex is connected as, from the tool's answer: the email, the organisation (its name when there is one) and the domain the account's tools use by default. If the call had no tool answer, because sign-in did not finish, say nothing is connected yet.
+Say who Codex is connected as, from the tool's answer: the email, the organisation (its name when there is one) and the domain the account's tools use by default. If `installLinked` is true, say the install ID is now linked to this account, and that answering no on a later connect, or asking to stop sharing the install ID, unlinks it (stop-sharing also deletes the checks stored under it). If `installUnlinked` is true, say the link made on an earlier connect has been removed. If the call had no tool answer, because sign-in did not finish, say nothing is connected yet.
 
 Nothing else changed in the account. Do not suggest anything was set up, installed or scanned.

@@ -72,7 +72,7 @@ This refuses a URL that is not http or https before any browser starts. It retur
 
 If `consent.asked` is false, ask the user this once, with "No" as the default and first option:
 
-> Share a random install ID with CookiePal? It only lets CookiePal count unique installs. It is a random number, not linked to you or your pages, kept in `~/.cookiepal/plugin-data` on this computer, and not removed when you uninstall the plugin. Connecting a CookiePal account from Codex never links it. You can stop sharing any time by asking to stop sharing your CookiePal install ID. The check runs either way.
+> Share a random install ID with CookiePal? It only lets CookiePal count unique installs. It is a random number, not linked to you or your pages, kept in `~/.cookiepal/plugin-data` on this computer, and not removed when you uninstall the plugin. If you later connect a CookiePal account, you will be asked separately whether to link it. You can stop sharing any time by asking to stop sharing your CookiePal install ID. The check runs either way.
 
 Options: **No, don't share** · **Yes, share it**
 

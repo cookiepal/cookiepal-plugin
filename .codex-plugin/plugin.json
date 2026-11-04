@@ -11,6 +11,7 @@
   "license": "MIT",
   "keywords": ["cookies", "consent", "gdpr", "ccpa", "lgpd", "law-25", "privacy", "cookie-banner"],
   "skills": "./codex-skills/",
+  "mcpServers": "./.codex-mcp.json",
   "interface": {
     "displayName": "CookiePal",
     "shortDescription": "Check pages for cookies set before consent",

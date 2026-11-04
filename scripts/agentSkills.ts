@@ -76,13 +76,6 @@ const SIGN_IN_AGAIN: Record<AgentClient, string> = {
     "tell the user to open Cursor's settings, choose **MCP**, sign in to **cookiepal**, and then ask for the CookiePal connect-account skill again.",
 };
 
-// Codex turns a hook's "ask" into a refusal, so the link a yes needs can never be confirmed there.
-const CODEX_NO_LINK = `### 1. Connect without the install ID
-
-In Codex the install ID is never linked to an account: linking needs the user to confirm it from a hook, and Codex hooks cannot ask. Connect without it in step 2, and do not ask about linking.
-
-`;
-
 const CLIENT_EDITS = (client: AgentClient): [string, string][] => [
   [
     "kept in this plugin's data folder and deleted when you uninstall the plugin",
@@ -109,23 +102,6 @@ const CLIENT_EDITS = (client: AgentClient): [string, string][] => [
 
 const SLASH_COMMAND = /`?\/cookiepal:([a-z-]+)`?/g;
 
-const CODEX_EDITS: [string | RegExp, string][] = [
-  [/### 1\. Ask before linking the install ID\n[\s\S]*?(?=### 2\. )/, CODEX_NO_LINK],
-  [
-    'If you later connect a CookiePal account, you will be asked separately whether to link it.',
-    'Connecting a CookiePal account from Codex never links it.',
-  ],
-  [
-    'With an `installId` from step 1, send it with `linkInstall` set to the recorded answer: `true` for yes, `false` for no. A no also removes a link made on an earlier connect. Without an `installId`, send neither.',
-    'Send neither `installId` nor `linkInstall`.',
-  ],
-  [
-    'call `connect_account` once more with the same `installId` and `linkInstall` as before (the answer stands for half an hour; if the hook refuses the call because it has run out, ask the link question again and record the new answer, never drop the `installId` to get past it).',
-    'call `connect_account` once more.',
-  ],
-  [/ If `installLinked` is true,[\s\S]*?has been removed\./, ''],
-];
-
 const CURSOR_EDITS: [string | RegExp, string][] = [
   [
     /^(when_to_use: .*asks to stop sharing their CookiePal install ID)\.$/m,
@@ -135,7 +111,7 @@ const CURSOR_EDITS: [string | RegExp, string][] = [
 
 const forClient = (text: string, client: AgentClient): string => {
   let adapted = CLIENT_EDITS(client).reduce((edited, [from, to]) => edited.replaceAll(from, to), text);
-  for (const [from, to] of client === 'codex' ? CODEX_EDITS : CURSOR_EDITS) adapted = adapted.replace(from, to);
+  if (client === 'cursor') for (const [from, to] of CURSOR_EDITS) adapted = adapted.replace(from, to);
   return adapted.replace(SLASH_COMMAND, 'the CookiePal $1 skill');
 };
 

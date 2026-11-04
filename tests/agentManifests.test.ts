@@ -9,6 +9,16 @@ const readJson = (path: string) => JSON.parse(readFileSync(join(root, path), 'ut
 const claude = readJson('.claude-plugin/plugin.json');
 const agentVersion: string = readJson('node_modules/@cookiepal-oss/agent/package.json').version;
 
+// The guards that can answer "ask": guard-banner always does, guard-connect does before linking the install ID.
+const ASKING_GUARDS = /\b(guard-banner|guard-connect)$/;
+
+const askingTools = (): string[] =>
+  readJson('hooks/hooks.json')
+    .hooks.PreToolUse.filter((entry: { hooks: { command: string }[] }) =>
+      entry.hooks.some(({ command }) => ASKING_GUARDS.test(command)),
+    )
+    .map((entry: { matcher: string }) => entry.matcher.match(/cookiepal__(\w+)\$$/)?.[1]);
+
 describe('the Cursor plugin manifest', () => {
   const manifest = readJson('.cursor-plugin/plugin.json');
 
@@ -46,6 +56,17 @@ describe('the Codex plugin manifest', () => {
 
   test('reads the Codex skills', () => {
     assert.equal(manifest.skills, './codex-skills/');
+  });
+
+  // A Codex hook cannot ask, so the agent writes no decision there and Codex's own approval prompt asks instead.
+  test('puts every tool a guard asks about on Codex’s approval prompt', () => {
+    assert.equal(manifest.mcpServers, './.codex-mcp.json');
+    const { mcpServers } = readJson('.codex-mcp.json');
+    assert.deepEqual(Object.keys(mcpServers), ['cookiepal']);
+    const { tools, ...server } = mcpServers.cookiepal;
+    assert.deepEqual(server, readJson('.mcp.json').mcpServers.cookiepal);
+    const prompted = Object.keys(tools).filter((tool) => tools[tool].approval_mode === 'prompt');
+    assert.deepEqual(prompted.sort(), askingTools().sort());
   });
 });
 
@@ -98,12 +119,13 @@ for (const client of Object.keys(AGENT_SKILL_DIRS) as AgentClient[]) {
   });
 }
 
-test('the Codex connect skill never asks to link the install ID, which a Codex hook could not confirm', () => {
+test('the Codex connect skill asks to link the install ID, as in Claude Code', () => {
   const connect = agentSkillFiles(root, 'codex', agentVersion).get(join('codex-skills', 'connect-account', 'SKILL.md'));
   assert.ok(connect);
-  assert.doesNotMatch(connect, /Link your shared install ID|linkInstall` set to|ask the link question/);
+  assert.match(connect, /Link your shared install ID/);
+  assert.match(connect, /linkInstall` set to the recorded answer/);
   for (const text of agentSkillFiles(root, 'codex', agentVersion).values()) {
-    assert.doesNotMatch(text, /whether to link it|CHECK cursor-hooks (install|uninstall)/);
+    assert.doesNotMatch(text, /never links it|CHECK cursor-hooks (install|uninstall)/);
   }
 });
 
