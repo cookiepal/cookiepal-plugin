@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.cookiepal/cookiepal",
+  "title": "CookiePal",
+  "description": "Manage your CookiePal cookie banner: domains, the banner tag and style, and cookie scan reports.",
+  "version": "1.0.0",
+  "websiteUrl": "https://cookiepal.io/ai",
+  "icons": [
+    {
+      "src": "https://cookiepal.io/images/favicon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.cookiepal.io/mcp"
+    }
+  ]
+}
