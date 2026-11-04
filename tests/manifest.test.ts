@@ -244,4 +244,19 @@ describe('the local steps', () => {
       assert.doesNotMatch(stdout, /Usage:/, step);
     }
   });
+
+  // .codex-mcp.json puts the banner tools on Codex's own approval prompt, which only asks if the hook leaves the call
+  // undecided: an agent that still refuses there would block every banner change in Codex.
+  test('in Codex, the banner guard leaves the call to Codex’s approval prompt', () => {
+    const { status, stdout } = spawnSync(process.execPath, [join(root, 'dist', 'check.mjs'), 'guard-banner'], {
+      input: JSON.stringify({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'mcp__cookiepal__set_banner_mode',
+        tool_input: {},
+      }),
+      encoding: 'utf8',
+      env: { ...process.env, PLUGIN_ROOT: root },
+    });
+    assert.deepEqual({ status, stdout }, { status: 0, stdout: '' });
+  });
 });
