@@ -5,14 +5,17 @@
   <img src="assets/logo.svg" width="260" alt="CookiePal">
 </picture>
 
-<strong>Cookie Consent Made Easy, now inside Claude Code</strong>
+<strong>Cookie Consent Made Easy, inside Claude Code and any MCP client</strong>
 
 **Privacy made simple.** Check any page for the cookies and trackers that fire before consent, and find out what its banner's reject button actually does. Runs on your machine. No account needed to check.
+
+CookiePal is also a hosted MCP server at `https://mcp.cookiepal.io/mcp`, for claude.ai, Claude Desktop, Cursor and any other MCP client: [use it anywhere](#-use-cookiepal-in-any-mcp-client).
 
 <!-- SHIELD GROUP -->
 
 [![License][license-shield]][license-link]
 [![Works with Claude Code][claude-code-shield]][claude-code-link]
+[![Remote MCP server][mcp-shield]][mcp-link]
 [![No Account][no-account-shield]][no-account-link]
 
 </div>
@@ -31,6 +34,7 @@
 - [📺 Demo](#-demo)
 - [🤔 Why](#-why)
 - [👋 Getting started](#-getting-started)
+- [🔌 Use CookiePal in any MCP client](#-use-cookiepal-in-any-mcp-client)
 - [✨ What a check tells you](#-what-a-check-tells-you)
   - [🚦 Three passes over the page](#-three-passes-over-the-page)
   - [⚖️ What each law asks for](#️-what-each-law-asks-for)
@@ -100,6 +104,33 @@ Run `/mcp` and you should see `plugin:cookiepal:cookiepal` listed as connected. 
 Requires [Node.js](https://nodejs.org) 24+ and Google Chrome, Microsoft Edge, Brave or Chromium. If your browser lives somewhere unusual, point `COOKIEPAL_BROWSER` at its executable.
 
 For a step-by-step walkthrough of every command and how to read its result, see the [CookiePal for Claude Code guide](https://cookiepal.io/help-guide/installation/cookiepal-for-claude-code) in the CookiePal Help Guide.
+
+## 🔌 Use CookiePal in any MCP client
+
+CookiePal is also a hosted MCP server, so you can use it without Claude Code: from a chat on claude.ai, in Claude Desktop or the Claude mobile apps, or in any other client that connects to remote MCP servers over streamable HTTP.
+
+```
+https://mcp.cookiepal.io/mcp
+```
+
+- **claude.ai, Claude Desktop and the Claude mobile apps**: add it as a custom connector. The [CookiePal connector for Claude guide](https://cookiepal.io/help-guide/installation/cookiepal-connector-for-claude) walks you through it.
+- **Cursor and other clients**: add it as a remote server. Most clients take a config like this one:
+
+  ```json
+  {
+    "mcpServers": {
+      "cookiepal": { "url": "https://mcp.cookiepal.io/mcp" }
+    }
+  }
+  ```
+
+From any client you can list the domains in your CookiePal account and add new ones, get the banner tag to paste into your page head, switch the banner between GDPR, CCPA or both, change its colours, position and texts, read a domain's latest cookie scan report, and set a cookie's category.
+
+You need no account to add the server. The first time a tool needs your account, your client asks you to sign in, with OAuth, on CookiePal's own pages, so your password never passes through the client.
+
+Checking a page for cookies set before consent, verifying the banner is live, checking Google Consent Mode and scanning a domain all load your site in a browser on your own machine, never on CookiePal's side. Those need this plugin. Afterwards, any client can read what they saved to your account: the latest scan report, and whether the banner was found installed.
+
+The server is listed in the [Official MCP Registry](https://registry.modelcontextprotocol.io) as `io.cookiepal/cookiepal`.
 
 ## ✨ What a check tells you
 
@@ -267,7 +298,7 @@ The plugin itself: the manifests, the `check-one-page`, `connect-account`, `veri
 
 Plugins install from git with no build step, so `dist/check.mjs` and `dist/scan.mjs` are the committed bundles of `src/` and its dependencies, beside `dist/tldts.mjs` and the `@cookiepal-oss/cookie-db` catalogue in `dist/cookies.json`. Rebuild them with `pnpm build`; CI fails when any of them is out of date. `dist/scan.mjs` is the detached process a scan runs in: it installs `@cookiepal-oss/cli`'s crawl engine into the plugin's own data folder on first use rather than bundling Crawlee or Puppeteer into the plugin itself.
 
-`plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains`, `add_domain`, `get_install_snippet`, `verify_installation`, `start_scan`, `upload_scan_report`, `get_scan_report`, `classify_cookies`, `check_gcm_status`, `set_banner_mode`, `customise_banner` and `regenerate_banner` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source.
+`plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains`, `add_domain`, `get_install_snippet`, `verify_installation`, `start_scan`, `upload_scan_report`, `get_scan_report`, `classify_cookies`, `check_gcm_status`, `set_banner_mode`, `customise_banner` and `regenerate_banner` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source. `server.json` is that server's entry in the [Official MCP Registry](https://registry.modelcontextprotocol.io), published from here with `mcp-publisher`.
 
 ## 🤝 Contributing
 
@@ -296,5 +327,7 @@ CookiePal is a product of [Westpoint](https://westpoint.io). Claude and Claude C
 [license-link]: ./LICENSE
 [claude-code-shield]: https://img.shields.io/badge/works_with-Claude_Code-EF8600?labelColor=222322&style=flat-square
 [claude-code-link]: https://claude.com/claude-code
+[mcp-shield]: https://img.shields.io/badge/remote_MCP-mcp.cookiepal.io-EF8600?labelColor=222322&style=flat-square
+[mcp-link]: #-use-cookiepal-in-any-mcp-client
 [no-account-shield]: https://img.shields.io/badge/account-not_required_to_check-EF8600?labelColor=222322&style=flat-square
 [no-account-link]: #-what-is-sent-to-cookiepal
