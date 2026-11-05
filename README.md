@@ -34,6 +34,7 @@ CookiePal is also a hosted MCP server at `https://mcp.cookiepal.io/mcp`, for cla
 - [📺 Demo](#-demo)
 - [🤔 Why](#-why)
 - [👋 Getting started](#-getting-started)
+- [🧩 Use the plugin in Codex or Cursor](#-use-the-plugin-in-codex-or-cursor)
 - [🔌 Use CookiePal in any MCP client](#-use-cookiepal-in-any-mcp-client)
 - [✨ What a check tells you](#-what-a-check-tells-you)
   - [🚦 Three passes over the page](#-three-passes-over-the-page)
@@ -105,6 +106,21 @@ Requires [Node.js](https://nodejs.org) 18 or later and Google Chrome, Microsoft 
 
 For a step-by-step walkthrough of every command and how to read its result, see the [CookiePal for Claude Code guide](https://cookiepal.io/help-guide/installation/cookiepal-for-claude-code) in the CookiePal Help Guide.
 
+## 🧩 Use the plugin in Codex or Cursor
+
+The same plugin runs in Codex and Cursor, with the same skills and the same local check. There, the skills run `@cookiepal-oss/agent` through npx, so you need [Node.js](https://nodejs.org) 18 or later and one of the browsers above.
+
+- **Codex**
+
+  ```sh
+  codex plugin marketplace add cookiepal/cookiepal-plugin
+  codex plugin add cookiepal@cookiepal
+  ```
+
+  The first check asks you once to let the agent's npx command run outside the sandbox. Banner changes and linking your install ID wait for Codex's own approval prompt. To remove it, run `codex plugin remove cookiepal@cookiepal` and `codex plugin marketplace remove cookiepal`.
+
+- **Cursor**: open Cursor Settings › Plugins and paste `https://github.com/cookiepal/cookiepal-plugin`. Cursor doesn't run a plugin's own hooks, so the first check asks to add two hooks to `~/.cursor/hooks.json`, and says what they do. Uninstalling the plugin leaves them in place: ask Cursor to remove the CookiePal hooks before you uninstall.
+
 ## 🔌 Use CookiePal in any MCP client
 
 CookiePal is also a hosted MCP server, so you can use it without Claude Code: from a chat on claude.ai, in Claude Desktop or the Claude mobile apps, or in any other client that connects to remote MCP servers over streamable HTTP.
@@ -114,7 +130,7 @@ https://mcp.cookiepal.io/mcp
 ```
 
 - **claude.ai, Claude Desktop and the Claude mobile apps**: add it as a custom connector. The [CookiePal connector for Claude guide](https://cookiepal.io/help-guide/installation/cookiepal-connector-for-claude) walks you through it.
-- **Cursor and other clients**: add it as a remote server. Most clients take a config like this one:
+- **Other clients**: add it as a remote server. Most clients take a config like this one:
 
   ```json
   {
@@ -128,7 +144,7 @@ From any client you can list the domains in your CookiePal account and add new o
 
 You need no account to add the server. The first time a tool needs your account, your client asks you to sign in, with OAuth, on CookiePal's own pages, so your password never passes through the client.
 
-Checking a page for cookies set before consent, verifying the banner is live, checking Google Consent Mode and scanning a domain all load your site in a browser on your own machine, never on CookiePal's side. Those need this plugin. Afterwards, any client can read what they saved to your account: the latest scan report, and whether the banner was found installed.
+Checking a page for cookies set before consent, verifying the banner is live, checking Google Consent Mode and scanning a domain all load your site in a browser on your own machine, never on CookiePal's side. Those need this plugin, in Claude Code, Codex or Cursor. Afterwards, any client can read what they saved to your account: the latest scan report, and whether the banner was found installed.
 
 The server is listed in the [Official MCP Registry](https://registry.modelcontextprotocol.io) as `io.cookiepal/cookiepal`.
 
