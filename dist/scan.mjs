@@ -259,7 +259,7 @@ var MAX_DEPTH = 3;
 var CONCURRENCY = 3;
 var run = async () => {
   const scanId = process.argv[2];
-  const dataDir = process.env.COOKIEPAL_DATA_DIR || null;
+  const dataDir = process.env.COOKIEPAL_DATA_DIR || process.env.CLAUDE_PLUGIN_DATA || null;
   if (!scanId || !dataDir) return;
   const scan = readScan(dataDir, scanId);
   if (!scan) {
