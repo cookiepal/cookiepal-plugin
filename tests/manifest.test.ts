@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, test } from 'node:test';
 
@@ -243,6 +244,22 @@ describe('the local steps', () => {
       });
       assert.doesNotMatch(stdout, /Usage:/, step);
     }
+  });
+
+  // The directory's validator only accepts hook commands that name CLAUDE_PLUGIN_ROOT, so they can't pass
+  // COOKIEPAL_DATA_DIR: the check has to find the data folder in the CLAUDE_PLUGIN_DATA Claude Code exports to hooks.
+  test('in Claude Code, dist/check.mjs finds the data folder from CLAUDE_PLUGIN_DATA alone', () => {
+    const hooks = readFileSync(join(root, 'hooks/hooks.json'), 'utf8');
+    assert.doesNotMatch(hooks, /COOKIEPAL_DATA_DIR|CLAUDE_PLUGIN_DATA/);
+    const dataDir = join(mkdtempSync(join(tmpdir(), 'cookiepal-')), 'data');
+    const { COOKIEPAL_DATA_DIR: _, ...env } = process.env;
+    const { stdout } = spawnSync(process.execPath, [join(root, 'dist', 'check.mjs'), 'prepare'], {
+      input: 'https://example.com',
+      encoding: 'utf8',
+      env: { ...env, CLAUDECODE: '1', CLAUDE_PLUGIN_DATA: dataDir },
+    });
+    assert.equal(JSON.parse(stdout).ok, true, stdout);
+    assert.ok(existsSync(dataDir));
   });
 
   // .codex-mcp.json puts the banner tools on Codex's own approval prompt, which only asks if the hook leaves the call
