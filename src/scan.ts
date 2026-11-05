@@ -35,7 +35,8 @@ interface EngineModule {
 
 const run = async (): Promise<void> => {
   const scanId = process.argv[2];
-  const dataDir = process.env.COOKIEPAL_DATA_DIR || null;
+  // Spawned by the save-scan hook, so it inherits the CLAUDE_PLUGIN_DATA Claude Code exports to hooks.
+  const dataDir = process.env.COOKIEPAL_DATA_DIR || process.env.CLAUDE_PLUGIN_DATA || null;
   if (!scanId || !dataDir) return;
 
   const scan = readScan(dataDir, scanId);

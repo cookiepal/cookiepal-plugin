@@ -2580,7 +2580,7 @@ var pluginVersion = () => {
     return null;
   }
 };
-var dataDir = process.env.COOKIEPAL_DATA_DIR || null;
+var dataDir = process.env.COOKIEPAL_DATA_DIR || process.env.CLAUDE_PLUGIN_DATA || null;
 var NO_DATA_DIR = {
   ok: false,
   error: "The plugin's data folder isn't available, so the check can't run. Reinstall the plugin and try again."

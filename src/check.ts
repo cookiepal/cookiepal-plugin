@@ -133,8 +133,13 @@ const pluginVersion = (): string | null => {
   }
 };
 
-/** `${CLAUDE_PLUGIN_DATA}`, passed in by the skill and the hooks. The check cannot run without it. */
-const dataDir = process.env.COOKIEPAL_DATA_DIR || null;
+/**
+ * `${CLAUDE_PLUGIN_DATA}`. The skills pass it in as COOKIEPAL_DATA_DIR, because commands Claude runs
+ * through Bash get no plugin variables. Hooks read the CLAUDE_PLUGIN_DATA that Claude Code exports to
+ * them, so their commands name no variable but `${CLAUDE_PLUGIN_ROOT}`, the only one the directory's
+ * validator can follow. The check cannot run without it.
+ */
+const dataDir = process.env.COOKIEPAL_DATA_DIR || process.env.CLAUDE_PLUGIN_DATA || null;
 
 const NO_DATA_DIR: Output = {
   ok: false,
