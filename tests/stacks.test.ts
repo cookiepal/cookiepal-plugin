@@ -383,12 +383,13 @@ describe('the skills that act on the rules', () => {
 });
 
 describe('the banner script path', () => {
-  test('src/install.ts, stacks.md and the fixtures all spell it the same way', () => {
+  test('the install check, stacks.md and the fixtures all spell it the same way', () => {
     const escaped = CLIENT_DATA_PATH.replaceAll('/', '\\/');
 
-    const install = readFileSync(join(root, 'src/install.ts'), 'utf8');
+    // The install check comes from @cookiepal-oss/agent; dist/check.mjs is the copy the plugin carries.
+    const install = readFileSync(join(root, 'dist/check.mjs'), 'utf8');
     const matcher = install.split('\n').find((line) => line.includes('const CLIENT_DATA'));
-    assert.ok(matcher, 'src/install.ts no longer defines CLIENT_DATA');
+    assert.ok(matcher, 'dist/check.mjs no longer defines CLIENT_DATA');
     assert.ok(matcher.includes(escaped), `CLIENT_DATA no longer matches ${CLIENT_DATA_PATH}`);
 
     assert.ok(rulesText.includes(escaped), `stacks.md no longer documents ${CLIENT_DATA_PATH}`);

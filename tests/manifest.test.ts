@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, test } from 'node:test';
 
@@ -103,7 +105,8 @@ describe('the skills are the commands', () => {
 });
 
 describe('the logo', () => {
-  const inlined = readFileSync(join(root, 'src/report.ts'), 'utf8');
+  // The report page comes from @cookiepal-oss/agent; dist/check.mjs is the copy the plugin carries.
+  const inlined = readFileSync(join(root, 'dist/check.mjs'), 'utf8');
   const flat = (svg: string) => svg.replace(/\s*\n\s*/g, '');
 
   // The page cannot load an external image, so the lockups are inlined. These
@@ -118,7 +121,7 @@ describe('the logo', () => {
       const body = asset.slice(asset.indexOf('>') + 1);
       assert.ok(inlined.includes(`class="logo ${cls}"`), `${cls} must be inlined`);
       for (const tag of body.match(/<(path|circle|rect)[^>]*>/g) ?? []) {
-        assert.ok(inlined.includes(tag), `${file}: ${tag.slice(0, 60)}… is missing from src/report.ts`);
+        assert.ok(inlined.includes(tag), `${file}: ${tag.slice(0, 60)}… is missing from dist/check.mjs`);
       }
     });
   }
@@ -179,7 +182,8 @@ describe('repository contents', () => {
   // The public suffix list that tldts bundles names thousands of other companies'
   // hosts, `amazonaws.com` and `*-staging` among them. It is public data, not
   // ours, so its section of dist/tldts.mjs is the one part left out of this check.
-  const PUBLIC_SUFFIX_LIST = /\/\/ node_modules\/\.pnpm\/tldts@[^\n]*\n[\s\S]*?(?=\n\/\/ (?:node_modules|src)\/|$)/g;
+  const PUBLIC_SUFFIX_LIST =
+    /\/\/ (?:\.\.\/)*node_modules\/\.pnpm\/tldts@[^\n]*\n[\s\S]*?(?=\n\/\/ (?:(?:\.\.\/)*node_modules|src)\/|$)/g;
 
   test('no internal hostnames or AWS endpoints', () => {
     for (const { path, text } of files) {
@@ -209,5 +213,67 @@ describe('repository contents', () => {
       const control = text.match(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/);
       assert.equal(control, null, `dist/${name} has a raw control character; escape it differently in src/`);
     }
+  });
+});
+
+describe('the local steps', () => {
+  const skills = readdirSync(join(root, 'skills')).map((name) =>
+    readFileSync(join(root, 'skills', name, 'SKILL.md'), 'utf8'),
+  );
+
+  // Claude Code runs the copy in dist/, offline, exactly as before the code moved to @cookiepal-oss/agent.
+  test('every Claude Code skill runs the bundled copy, never npx', () => {
+    for (const text of skills) assert.doesNotMatch(text, /npx/);
+    assert.ok(skills.some((text) => /node "\$\{CLAUDE_PLUGIN_ROOT\}\/dist\/check\.mjs"/.test(text)));
+  });
+
+  // An unknown step prints the usage and exits 1, which Claude Code and Codex treat as a non-blocking error: the guard would fail open.
+  test('every step hooks.json runs is one dist/check.mjs knows', () => {
+    const hooks = JSON.parse(readFileSync(join(root, 'hooks/hooks.json'), 'utf8'));
+    const commands = Object.values(hooks.hooks as Record<string, { hooks: { command: string }[] }[]>)
+      .flat()
+      .flatMap((entry) => entry.hooks.map((hook) => hook.command));
+    const steps = commands.map((command) => command.match(/dist\/check\.mjs" (\S+)$/)?.[1]);
+    assert.ok(steps.length > 0);
+    for (const [index, step] of steps.entries()) {
+      assert.ok(step, `no step in ${commands[index]}`);
+      const { stdout } = spawnSync(process.execPath, [join(root, 'dist', 'check.mjs'), step], {
+        input: '{}',
+        encoding: 'utf8',
+        env: { ...process.env, COOKIEPAL_DATA_DIR: '' },
+      });
+      assert.doesNotMatch(stdout, /Usage:/, step);
+    }
+  });
+
+  // The directory's validator only accepts hook commands that name CLAUDE_PLUGIN_ROOT, so they can't pass
+  // COOKIEPAL_DATA_DIR: the check has to find the data folder in the CLAUDE_PLUGIN_DATA Claude Code exports to hooks.
+  test('in Claude Code, dist/check.mjs finds the data folder from CLAUDE_PLUGIN_DATA alone', () => {
+    const hooks = readFileSync(join(root, 'hooks/hooks.json'), 'utf8');
+    assert.doesNotMatch(hooks, /COOKIEPAL_DATA_DIR|CLAUDE_PLUGIN_DATA/);
+    const dataDir = join(mkdtempSync(join(tmpdir(), 'cookiepal-')), 'data');
+    const { COOKIEPAL_DATA_DIR: _, ...env } = process.env;
+    const { stdout } = spawnSync(process.execPath, [join(root, 'dist', 'check.mjs'), 'prepare'], {
+      input: 'https://example.com',
+      encoding: 'utf8',
+      env: { ...env, CLAUDECODE: '1', CLAUDE_PLUGIN_DATA: dataDir },
+    });
+    assert.equal(JSON.parse(stdout).ok, true, stdout);
+    assert.ok(existsSync(dataDir));
+  });
+
+  // .codex-mcp.json puts the banner tools on Codex's own approval prompt, which only asks if the hook leaves the call
+  // undecided: an agent that still refuses there would block every banner change in Codex.
+  test('in Codex, the banner guard leaves the call to Codex’s approval prompt', () => {
+    const { status, stdout } = spawnSync(process.execPath, [join(root, 'dist', 'check.mjs'), 'guard-banner'], {
+      input: JSON.stringify({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'mcp__cookiepal__set_banner_mode',
+        tool_input: {},
+      }),
+      encoding: 'utf8',
+      env: { ...process.env, PLUGIN_ROOT: root },
+    });
+    assert.deepEqual({ status, stdout }, { status: 0, stdout: '' });
   });
 });

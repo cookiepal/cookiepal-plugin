@@ -1,0 +1,16 @@
+{
+  "name": "cookiepal",
+  "version": "0.4.0",
+  "description": "Check any page for cookies and trackers that fire before consent, and for what its banner's accept and reject buttons actually do, from Cursor. Sign in to CookiePal when Cursor connects; a free account is enough.",
+  "author": {
+    "name": "CookiePal"
+  },
+  "homepage": "https://cookiepal.io",
+  "repository": "https://github.com/cookiepal/cookiepal-plugin",
+  "license": "MIT",
+  "keywords": ["cookies", "consent", "gdpr", "ccpa", "lgpd", "law-25", "privacy", "cookie-banner"],
+  "logo": "assets/icon.svg",
+  "skills": "./cursor-skills/",
+  "mcpServers": "./.cursor-mcp.json",
+  "hooks": "./.cursor-hooks.json"
+}

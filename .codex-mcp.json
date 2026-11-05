@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "cookiepal": {
+      "type": "http",
+      "url": "https://mcp.cookiepal.io/mcp",
+      "tools": {
+        "connect_account": { "approval_mode": "prompt" },
+        "customise_banner": { "approval_mode": "prompt" },
+        "regenerate_banner": { "approval_mode": "prompt" },
+        "set_banner_mode": { "approval_mode": "prompt" }
+      }
+    }
+  }
+}

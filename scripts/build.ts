@@ -1,36 +1,24 @@
-import { rmSync, writeFileSync } from 'node:fs';
-import { cookies } from '@cookiepal-oss/cookie-db';
-import { type BuildOptions, build, type Plugin } from 'esbuild';
-
-const shared: BuildOptions = {
-  bundle: true,
-  platform: 'node',
-  format: 'esm',
-  target: 'node18',
-  legalComments: 'inline',
-  outdir: 'dist',
-  outExtension: { '.js': '.mjs' },
-  banner: { js: '// Built from src/ by pnpm build. Do not edit: CI fails when this file is out of date.' },
-};
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { AGENT_SKILL_DIRS, type AgentClient, agentSkillFiles } from './agentSkills.ts';
 
 /**
- * tldts goes in its own `dist/tldts.mjs`, beside the bundles that import it. Its
- * public suffix list is most of the size of whichever bundle carries it, and the
- * plugin directory holds any file over 256 KiB for a reviewer.
+ * The hooks and Claude Code's skills run the local steps from `dist/`, offline, so
+ * the plugin carries a copy of `@cookiepal-oss/agent`'s bundles. Codex and Cursor
+ * get their own copies of the skills, which run the same version through npx.
  */
-const tldtsBeside: Plugin = {
-  name: 'tldts-beside',
-  setup: (plugin) => {
-    plugin.onResolve({ filter: /^tldts$/ }, () => ({ path: './tldts.mjs', external: true }));
-  },
-};
+const agent = dirname(createRequire(import.meta.url).resolve('@cookiepal-oss/agent/package.json'));
+const { version } = JSON.parse(readFileSync(join(agent, 'package.json'), 'utf8'));
 
-// Cleared first, so a file the build stops writing fails the dist/ freshness check rather than staying committed.
+// Cleared first, so a file the package stops shipping fails the freshness check rather than staying committed.
 rmSync('dist', { recursive: true, force: true });
-await build({ ...shared, entryPoints: ['src/check.ts', 'src/scan.ts'], plugins: [tldtsBeside] });
-// tldts' `main` is CommonJS, which bundles without its named exports.
-await build({ ...shared, entryPoints: { tldts: 'tldts' }, mainFields: ['module', 'main'] });
+cpSync(join(agent, 'dist'), 'dist', { recursive: true });
 
-// Only the fields `src/categorise.ts` reads: the descriptions are nearly half the catalogue.
-const lookup = cookies.map(({ name, vendor, category, wildcard }) => ({ name, vendor, category, wildcard }));
-writeFileSync('dist/cookies.json', `${JSON.stringify(lookup)}\n`);
+for (const client of Object.keys(AGENT_SKILL_DIRS) as AgentClient[]) {
+  rmSync(AGENT_SKILL_DIRS[client], { recursive: true, force: true });
+  for (const [path, text] of agentSkillFiles('.', client, version)) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, text);
+  }
+}
