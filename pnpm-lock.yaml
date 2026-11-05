@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@cookiepal-oss/agent':
-        specifier: 0.2.1
-        version: 0.2.1
+        specifier: 0.2.2
+        version: 0.2.2
     devDependencies:
       '@anthropic-ai/claude-code':
         specifier: 2.1.282
@@ -133,8 +133,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@cookiepal-oss/agent@0.2.1':
-    resolution: {integrity: sha512-cH+gyyb2CkFHN9qyKU9EuMNZciQWldcU9AB/bAQo7419EnwLBP5qeqLRAq/EwBTv+t5e+md/YFEyrnuqW5aBUg==}
+  '@cookiepal-oss/agent@0.2.2':
+    resolution: {integrity: sha512-sHZfsWTIzmR2kpvk+bE4xcinW8/IddXYDyVxl9hPr2GhEh2DkZHzGoEJH16llX8vV9KoVj0+szjGmbzcsn01Ng==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -341,7 +341,7 @@ snapshots:
   '@biomejs/cli-win32-x64@2.5.14':
     optional: true
 
-  '@cookiepal-oss/agent@0.2.1': {}
+  '@cookiepal-oss/agent@0.2.2': {}
 
   '@types/node@24.19.0':
     dependencies:

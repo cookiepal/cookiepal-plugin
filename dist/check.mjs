@@ -2807,12 +2807,12 @@ var pluginVersion = () => {
     const manifest = new URL("../.claude-plugin/plugin.json", import.meta.url);
     return JSON.parse(readFileSync6(manifest, "utf8")).version ?? null;
   } catch {
-    return true ? "0.2.1" : null;
+    return true ? "0.2.2" : null;
   }
 };
 var HOME_DATA_DIR = join6(homedir(), ".cookiepal", "plugin-data");
 var resolveDataDir = (env) => {
-  const given = env.COOKIEPAL_DATA_DIR;
+  const given = env.COOKIEPAL_DATA_DIR || env.CLAUDE_PLUGIN_DATA;
   if (env.PLUGIN_ROOT) return HOME_DATA_DIR;
   if (given) return given;
   return env.CLAUDECODE === "1" ? null : HOME_DATA_DIR;
@@ -3235,7 +3235,7 @@ var cursorHookPaths = () => ({
   agentDir: join6(homedir(), ".cookiepal", "agent"),
   distDir: fileURLToPath(new URL(".", import.meta.url)),
   node: process.execPath,
-  version: true ? "0.2.1" : "dev"
+  version: true ? "0.2.2" : "dev"
 });
 var cursorHooks = (action) => {
   const paths = cursorHookPaths();
