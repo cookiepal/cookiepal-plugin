@@ -17,6 +17,6 @@
     "shortDescription": "Check pages for cookies set before consent",
     "developerName": "CookiePal",
     "websiteURL": "https://cookiepal.io",
-    "logo": "./assets/logo.svg"
+    "logo": "./assets/icon.svg"
   }
 }

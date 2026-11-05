@@ -9,7 +9,7 @@
   "repository": "https://github.com/cookiepal/cookiepal-plugin",
   "license": "MIT",
   "keywords": ["cookies", "consent", "gdpr", "ccpa", "lgpd", "law-25", "privacy", "cookie-banner"],
-  "logo": "assets/logo.svg",
+  "logo": "assets/icon.svg",
   "skills": "./cursor-skills/",
   "mcpServers": "./.cursor-mcp.json",
   "hooks": "./.cursor-hooks.json"
