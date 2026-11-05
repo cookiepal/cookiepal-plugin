@@ -120,7 +120,13 @@ The same plugin runs in Codex and Cursor, with the same local check. Their copie
 
   The first check asks you once to let the agent's npx command run outside the sandbox. Banner changes and linking your install ID wait for Codex's own approval prompt. To remove it, run `codex plugin remove cookiepal@cookiepal` and `codex plugin marketplace remove cookiepal`.
 
-- **Cursor**: open Cursor Settings › Plugins and paste `https://github.com/cookiepal/cookiepal-plugin`. Cursor asks you to sign in to CookiePal when it connects, even to check a page, because it only offers sign-in when a server refuses the connection; you can create a free account there. Cursor doesn't run a plugin's own hooks, so the first check asks to add two hooks to `~/.cursor/hooks.json`, and says what they do. Uninstalling the plugin leaves them in place: ask Cursor to remove the CookiePal hooks before you uninstall.
+- **Cursor**: once CookiePal is in the Cursor Marketplace, open **Customize** in the sidebar and install it from there. Until then, install it as a local plugin and run **Developer: Reload Window**:
+
+  ```sh
+  git clone https://github.com/cookiepal/cookiepal-plugin ~/.cursor/plugins/local/cookiepal
+  ```
+
+  Cursor asks you to sign in to CookiePal when it connects, even to check a page, because it only offers sign-in when a server refuses the connection; you can create a free account there. Cursor doesn't run a plugin's own hooks, so the first check asks to add two hooks to `~/.cursor/hooks.json`, and says what they do. Uninstalling the plugin leaves them in place: ask Cursor to remove the CookiePal hooks before you uninstall.
 
 ## 🔌 Use CookiePal in any MCP client
 
