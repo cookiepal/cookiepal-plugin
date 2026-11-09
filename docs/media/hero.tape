@@ -13,7 +13,7 @@
 #      answered and the recording is not three approval dialogs.
 #   4. Time that run, then set the Sleep below to just past the verdict.
 
-Output docs/media/hero.gif
+Output "/tmp/cookiepal-hero-raw.gif"
 
 Set Shell "zsh"
 Set FontSize 16
@@ -45,6 +45,6 @@ Enter
 
 # Set this to just past the verdict appearing. Trim the tail afterwards rather
 # than shipping dead air.
-# A real run against cookiepal.io takes about 72s.
-Sleep 78s
+# A real run against cookiepal.io takes about 85s.
+Sleep 100s
 Sleep 2s

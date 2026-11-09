@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Built from src/ by pnpm build. Do not edit: CI fails when this file is out of date.
+// Built from src/ by pnpm build. Do not edit.
 
 // src/scan.ts
 import { rmSync as rmSync3 } from "node:fs";
@@ -55,7 +55,7 @@ var findBrowser = () => {
 // src/engine.ts
 import { spawnSync } from "node:child_process";
 import { existsSync as existsSync2, mkdirSync, readFileSync } from "node:fs";
-import { join as join2 } from "node:path";
+import { join as join2, win32 } from "node:path";
 var ENGINE_VERSION = "1.3.1";
 var engineDir = (dataDir) => join2(dataDir, "engine");
 var enginePackageJson = (dataDir) => join2(engineDir(dataDir), "node_modules", "@cookiepal-oss", "cli", "package.json");
@@ -77,10 +77,18 @@ var installArgs = (dataDir) => [
   "--ignore-scripts",
   `@cookiepal-oss/cli@${ENGINE_VERSION}`
 ];
+var npmCommand = (platform = process.platform, node = process.execPath) => platform === "win32" ? { file: node, args: [win32.join(win32.dirname(node), "node_modules", "npm", "bin", "npm-cli.js")] } : { file: "npm", args: [] };
 var ensureEngine = (dataDir) => {
   if (installedVersion(dataDir) === ENGINE_VERSION) return;
   if (!existsSync2(engineDir(dataDir))) mkdirSync(engineDir(dataDir), { recursive: true });
-  const result = spawnSync("npm", installArgs(dataDir), { encoding: "utf8" });
+  const npm = npmCommand();
+  const npmCli = npm.args[0];
+  if (npmCli && !existsSync2(npmCli)) {
+    throw new CheckError(
+      `npm was not found beside ${npm.file}, so the crawl engine can't be installed. Reinstall Node.js with npm included, then try again.`
+    );
+  }
+  const result = spawnSync(npm.file, [...npm.args, ...installArgs(dataDir)], { encoding: "utf8" });
   if (result.error) {
     throw new CheckError(`Could not run npm to install the crawl engine: ${result.error.message}`);
   }
@@ -178,7 +186,7 @@ import { readFileSync as readFileSync3 } from "node:fs";
 var catalogue;
 var loadCatalogue = () => {
   const cookies = JSON.parse(
-    readFileSync3(new URL("../dist/cookies.json", import.meta.url), "utf8")
+    readFileSync3(new URL(true ? "./cookies.json" : "../dist/cookies.json", import.meta.url), "utf8")
   );
   const exact = /* @__PURE__ */ new Map();
   const prefixes = [];
@@ -259,7 +267,7 @@ var MAX_DEPTH = 3;
 var CONCURRENCY = 3;
 var run = async () => {
   const scanId = process.argv[2];
-  const dataDir = process.env.COOKIEPAL_DATA_DIR || process.env.CLAUDE_PLUGIN_DATA || null;
+  const dataDir = process.env.COOKIEPAL_DATA_DIR || null;
   if (!scanId || !dataDir) return;
   const scan = readScan(dataDir, scanId);
   if (!scan) {
@@ -294,7 +302,6 @@ var run = async () => {
       keepImages: true,
       markRequests: false,
       respectRobots: true,
-      // It runs the user's own browser over up to maxPages of third-party scripts, so the sandbox stays on, as in the page check.
       sandbox: true,
       onPageCrawled: () => {
         pagesVisited += 1;
@@ -314,7 +321,6 @@ var run = async () => {
       pagesScanned: result.pagesVisited,
       cookies,
       thirdPartyHosts: [],
-      // A heuristic: the engine reports no truncation signal, so a site with exactly maxPages pages reads as truncated too.
       truncated: result.pagesVisited >= scan.maxPages || capped
     });
   } catch (error) {
