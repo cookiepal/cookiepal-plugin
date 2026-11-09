@@ -1,8 +1,8 @@
 <div align="center"><a name="readme-top"></a>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-  <img src="assets/logo.svg" width="260" alt="CookiePal">
+  <source media="(prefers-color-scheme: dark)" srcset="https://cookiepal-assets.s3.amazonaws.com/plugin/logo-dark.svg">
+  <img src="https://cookiepal-assets.s3.amazonaws.com/brand/cookiepal-logo.svg" width="260" alt="CookiePal">
 </picture>
 
 <strong>Cookie Consent Made Easy, inside Claude Code, Codex, Cursor and any MCP client</strong>
