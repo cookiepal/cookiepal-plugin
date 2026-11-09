@@ -24,7 +24,7 @@ CookiePal is also a hosted MCP server at `https://mcp.cookiepal.io/mcp`, for cla
 ## 📺 Demo
 
 <div align="center">
-<img src="docs/media/hero.gif" alt="A CookiePal check running in Claude Code" width="800" />
+<img src="https://cookiepal-assets.s3.amazonaws.com/plugin/hero.gif" alt="A CookiePal check running in Claude Code" width="800" />
 </div>
 
 <details>
@@ -109,7 +109,7 @@ For a step-by-step walkthrough of every command and how to read its result, see 
 
 ## 🧩 Use the plugin in Codex or Cursor
 
-The same plugin runs in Codex and Cursor, with the same local check. Their copies of the skills run `@cookiepal-oss/agent` through npx, so you need [Node.js](https://nodejs.org) 18 or later and one of the browsers above. There are no `/cookiepal:` commands there: ask for a skill by name or in your own words. The read goes to a local HTML or Markdown file, or to the chat, never to a claude.ai artifact.
+The same plugin runs in Codex and Cursor, with the same local check. Their copies of the skills run `@cookiepal-oss/agent` through `npm exec`, from the filesystem root and the public npm registry so a project you have open can't substitute its own copy, so you need [Node.js](https://nodejs.org) 18 or later and one of the browsers above. There are no `/cookiepal:` commands there: ask for a skill by name or in your own words. The read goes to a local HTML or Markdown file, or to the chat, never to a claude.ai artifact.
 
 - **Codex**
 
@@ -118,7 +118,7 @@ The same plugin runs in Codex and Cursor, with the same local check. Their copie
   codex plugin add cookiepal@cookiepal
   ```
 
-  The first check asks you once to let the agent's npx command run outside the sandbox. When Codex starts, it asks you to review the plugin's hooks: choose **Trust all and continue**, or trust them in `/hooks`. The check can't run without them, and Codex asks again after an update changes them. Banner changes and linking your install ID wait for Codex's own approval prompt. To remove it, run `codex plugin remove cookiepal@cookiepal` and `codex plugin marketplace remove cookiepal`.
+  The first check asks you once to let the agent's `npm exec` command run outside the sandbox. Banner changes and linking your install ID wait for Codex's own approval prompt. To remove it, run `codex plugin remove cookiepal@cookiepal` and `codex plugin marketplace remove cookiepal`.
 
 - **Cursor**: once CookiePal is in the Cursor Marketplace, open **Customize** in the sidebar and install it from there. Until then, install it as a local plugin and run **Developer: Reload Window**:
 
@@ -174,7 +174,7 @@ You get every cookie with its category, every third-party host the page contacte
 ### ⚖️ What each law asks for
 
 <!-- MEDIA (optional): risk-read.png. A still of the rendered read, which a
-     terminal recording cannot show. See docs/media/README.md. -->
+     terminal recording cannot show. -->
 
 The result comes with a plain-language read against the **GDPR**, the **CCPA and CPRA**, the **LGPD** and **Quebec's Law 25**. The laws disagree about whether tracking needs permission up front or only a way to opt out, so each gets its own answer instead of a single meaningless score.
 
@@ -205,7 +205,7 @@ It works on any page your machine can reach, including `localhost` and pre-relea
 
 Only what it takes to count checks and store the result:
 
-- the page's **origin and path**. The query string and fragment are stripped before anything is sent, because they carry tokens, and the plugin refuses to send an address that still has one;
+- the page's **origin and path**. The query string and fragment are stripped before anything is sent, because they carry tokens;
 - each cookie's **name, domain, path, expiry, flags and category**, but **never its value**, which the server has no field for and rejects outright;
 - the **third-party hosts** the page contacted;
 - what the **accept and reject** presses did: whether each button was pressed, and the same cookie details and third-party hosts as above, read after each press;
@@ -215,13 +215,13 @@ Only what it takes to count checks and store the result:
 
 Asking CookiePal to confirm your banner is installed sends one more reading, and only when you ask for it. The page is loaded on **your** machine, never by CookiePal, and what goes up is the page's **origin and path**, **when it was read**, the **CookiePal banner script** found there with its query string stripped, that **script's tag** rebuilt from its `id`, `type`, `defer` and `async` attributes alone, and whether the page **could not be read** at all. Nothing else from the page goes with it, and the reading sets that domain's banner status in your CookiePal account.
 
-Running a scan with `/cookiepal:run-scan` sends one more report, only when you ask for it. The crawl runs on **your** machine, never on CookiePal's, and what goes up is the domain's **page count** and whether the crawl was **cut short at the page limit**, each cookie's **name, domain, path, duration and category**, plus a **vendor name** for the cookies that match the open-source catalogue. It is stored as a cookie report labelled a local scan. Cookie values never go up, and a hook refuses a report that differs from what the local crawl produced.
+Running a scan with `/cookiepal:run-scan` sends one more report, only when you ask for it. The crawl runs on **your** machine, never on CookiePal's, and what goes up is the domain's **page count** and whether the crawl was **cut short at the page limit**, each cookie's **name, domain, path, duration and category**, plus a **vendor name** for the cookies that match the open-source catalogue. It is stored as a cookie report labelled a local scan. Cookie values never go up.
 
-Checking Google Consent Mode with `/cookiepal:check-gcm` sends one reading, only when you ask for it: the page's **origin and path**, whether Consent Mode was **found**, the **names of its consent entries** (plain identifiers such as `ad_storage`) read from the page's own `google_tag_data`, which of them have **no default**, and whether a default was **set late**. Nothing else from the page goes with it. CookiePal works out the verdict from that reading and stores only the verdict, which sets that domain's Consent Mode status in your CookiePal account, marked as a reading taken on your machine. The page's address and the reading itself are not stored, and a hook refuses a reading that differs from what the local check produced.
+Checking Google Consent Mode with `/cookiepal:check-gcm` sends one reading, only when you ask for it: the page's **origin and path**, whether Consent Mode was **found**, the **names of its consent entries** (plain identifiers such as `ad_storage`) read from the page's own `google_tag_data`, which of them have **no default**, and whether a default was **set late**. Nothing else from the page goes with it. CookiePal works out the verdict from that reading and stores only the verdict, which sets that domain's Consent Mode status in your CookiePal account, marked as a reading taken on your machine. The page's address and the reading itself are not stored.
 
-Changing a domain's banner through `set_banner_mode` or `customise_banner` sends what you ask for, only when you ask for it: the **banner mode** (`gdpr`, `ccpa` or `both`), the banner's **colours, logo type and colour, and positions**, and the banner's **title, description and button texts** and the preference centre's **title and description** you give for each language. It is saved as that domain's banner settings in your CookiePal account, as the dashboard does. Nothing from the page goes with it, and `regenerate_banner` sends only the domain's name. Each of the three changes the live banner straight away, so you are asked every time before it goes out. In Claude Code and Cursor a hook in the plugin asks, saying what is about to go live — for `ccpa`, that visitors in the EU and UK are no longer asked for consent first. Codex asks in its own approval prompt. Claude Code skips that dialog in bypass-permissions mode, and the hook does not run when hooks are turned off.
+Changing a domain's banner through `set_banner_mode` or `customise_banner` sends what you ask for, only when you ask for it: the **banner mode** (`gdpr`, `ccpa` or `both`), the banner's **colours, logo type and colour, and positions**, and the banner's **title, description and button texts** and the preference centre's **title and description** you give for each language. It is saved as that domain's banner settings in your CookiePal account, as the dashboard does. Nothing from the page goes with it, and `regenerate_banner` sends only the domain's name. Each of the three changes the live banner straight away, so you are asked every time before it goes out. In Claude Code its own permission prompt asks before each call unless you have allowed that tool. In Cursor the hooks CookiePal adds ask, saying what is about to go live — for `ccpa`, that visitors in the EU and UK are no longer asked for consent first. Codex asks in its own approval prompt.
 
-If you connect a CookiePal account with `/cookiepal:connect-account`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. A hook in the plugin refuses to send the ID without an answer recorded on this machine, and you confirm a yes once more before the ID is sent: in Claude Code's own dialog in its default permission mode, through the hook in Cursor, and in Codex's own approval prompt. Claude Code skips that dialog in bypass-permissions mode, and the hook does not run when hooks are turned off. Answering no on a later connect removes a link you made before.
+If you connect a CookiePal account with `/cookiepal:connect-account`, you are asked separately whether to link a shared install ID to it, so CookiePal can tell that checks led to a signup. The default is no. The ID is sent only with the answer you gave, recorded on this machine, and you confirm a yes once more before it is sent: in Claude Code's own permission prompt unless you have allowed that tool, through the hooks CookiePal adds in Cursor, and in Codex's own approval prompt. Answering no on a later connect removes a link you made before.
 
 One other thing leaves your machine, and only when you ask for it: running `/cookiepal:check-one-page stop-sharing` sends the install ID twice more, on its own, so the checks stored under it can be erased, and a third time if the first two came too close together. Nothing else accompanies it.
 
@@ -317,15 +317,17 @@ claude plugin marketplace remove cookiepal
 
 ## 📦 What is in this repository
 
-The plugin itself: the manifests, the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack`, `install-banner`, `match-site-design`, `run-scan` and `check-gcm` skills, each run as its own command (`/cookiepal:check-one-page` and so on), the local check from `@cookiepal-oss/agent` (copied into `dist/`), the curated legal wording in that package's `src/laws.ts`, and the hooks that hand each plan, each result, each install tag and each start_scan answer to that check, refuse an install reading, a scan report or a Consent Mode reading no local run produced, ask before a banner change goes live, and spawn the crawl a start_scan answer describes. The Codex and Cursor manifests, in `.codex-plugin/` and `.cursor-plugin/`, point at `codex-skills/` and `cursor-skills/`: copies of `skills/` that `pnpm build` generates, which run the same pinned agent through npx.
+The plugin itself: the manifests, the remote MCP server entry in `.mcp.json`, and the `check-one-page`, `connect-account`, `verify-installation`, `detect-stack`, `install-banner`, `match-site-design`, `run-scan` and `check-gcm` skills, each run as its own command (`/cookiepal:check-one-page` and so on). The Claude Code plugin ships no hooks and no code. The Codex and Cursor manifests, in `.codex-plugin/` and `.cursor-plugin/`, point at `codex-skills/` and `cursor-skills/`: copies of `skills/` for those clients.
 
-Plugins install from git with no build step, so `dist/` holds a committed copy of the bundles from `@cookiepal-oss/agent`, the package in the cookiepal-oss repository that carries the plugin's local steps. Claude Code's skills and hooks run that copy. Rebuild `dist/` with `pnpm build`; CI fails when it is out of date. `dist/scan.mjs` is the detached process a scan runs in: it installs `@cookiepal-oss/cli`'s crawl engine into the plugin's own data folder on first use rather than bundling Crawlee or Puppeteer into the plugin itself.
+### What runs on your machine
+
+The steps that load a page or crawl a site run CookiePal's open-source local agent, [`@cookiepal-oss/agent`](https://www.npmjs.com/package/@cookiepal-oss/agent), pinned to an exact version. Each skill runs `npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.2.2`: npm downloads that version from the public npm registry once into its cache and runs it. Running it from the filesystem root, with the registry named, means a project you have open cannot substitute its own copy of the agent. You are asked before the command runs, like any other shell command. Its source is in the [cookiepal-oss repository](https://github.com/cookiepal/cookiepal-oss). In Claude Code it keeps its files in the plugin's data folder.
 
 `plan_check`, `submit_check`, `forget_install`, `connect_account`, `whoami`, `list_domains`, `add_domain`, `get_install_snippet`, `verify_installation`, `start_scan`, `upload_scan_report`, `get_scan_report`, `classify_cookies`, `check_gcm_status`, `set_banner_mode`, `customise_banner` and `regenerate_banner` are served by CookiePal's hosted MCP server at `https://mcp.cookiepal.io/mcp`, which is not open source. `server.json` is that server's entry in the [Official MCP Registry](https://registry.modelcontextprotocol.io), published from here with `mcp-publisher`.
 
 ## 🤝 Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the build, test and lint commands and the code conventions.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how the plugin is laid out and the conventions it follows.
 
 ## 📜 Legal
 
