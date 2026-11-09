@@ -118,7 +118,7 @@ The same plugin runs in Codex and Cursor, with the same local check. Their copie
   codex plugin add cookiepal@cookiepal
   ```
 
-  The first check asks you once to let the agent's npx command run outside the sandbox. Banner changes and linking your install ID wait for Codex's own approval prompt. To remove it, run `codex plugin remove cookiepal@cookiepal` and `codex plugin marketplace remove cookiepal`.
+  The first check asks you once to let the agent's npx command run outside the sandbox. When Codex starts, it asks you to review the plugin's hooks: choose **Trust all and continue**, or trust them in `/hooks`. The check can't run without them, and Codex asks again after an update changes them. Banner changes and linking your install ID wait for Codex's own approval prompt. To remove it, run `codex plugin remove cookiepal@cookiepal` and `codex plugin marketplace remove cookiepal`.
 
 - **Cursor**: once CookiePal is in the Cursor Marketplace, open **Customize** in the sidebar and install it from there. Until then, install it as a local plugin and run **Developer: Reload Window**:
 
