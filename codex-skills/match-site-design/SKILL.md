@@ -18,10 +18,10 @@ one.
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-npx -y @cookiepal-oss/agent@0.2.2
+npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.2.2
 ```
 
-**In Codex:** run every `CHECK` command outside the sandbox, by requesting escalated permissions for it with `prefix_rule` set to `["npx", "-y", "@cookiepal-oss/agent@0.2.2"]`, so one approval covers every later `CHECK`. Say why: it saves the check's files in `~/.cookiepal` and loads pages in a browser, which the sandbox blocks. If Codex rejects the request without asking the user, tell them to choose "Ask for approval" under `/permissions` and ask again, and stop. If the user declines, tell them the check can't run inside the sandbox, and stop. Never run a `CHECK cursor-hooks` command from Codex.
+**In Codex:** run every `CHECK` command outside the sandbox, by requesting escalated permissions for it with `prefix_rule` set to `["npm", "exec", "--yes", "--prefix", "/", "--@cookiepal-oss:registry=https://registry.npmjs.org/", "--", "@cookiepal-oss/agent@0.2.2"]`, so one approval covers every later `CHECK`. Say why: it saves the check's files in `~/.cookiepal` and loads pages in a browser, which the sandbox blocks. If Codex rejects the request without asking the user, tell them to choose "Ask for approval" under `/permissions` and ask again, and stop. If the user declines, tell them the check can't run inside the sandbox, and stop. Never run a `CHECK cursor-hooks` command from Codex.
 
 Run it exactly as shown, passing the colours only through the quoted heredoc. Never work out a
 contrast ratio, or convert a colour to hex, yourself: `CHECK design` does both, and its numbers are

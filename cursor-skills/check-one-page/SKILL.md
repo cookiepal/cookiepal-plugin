@@ -16,7 +16,7 @@ The check never says whether a site is compliant. It says what was found and wha
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-npx -y @cookiepal-oss/agent@0.2.2
+npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.2.2
 ```
 
 **First, in Cursor:** run `CHECK cursor-hooks status`. If it prints `"installed": true`, go on. Otherwise ask the user, in these words: "CookiePal needs to add two hooks to Cursor's hooks file (~/.cursor/hooks.json). Cursor runs them on every MCP call, to any server, and they act only on calls to CookiePal: they hand each check's plan and result between steps and refuse unsafe calls. They run a copy of CookiePal's checker kept in ~/.cookiepal/agent. Your other hooks stay as they are. Uninstalling the plugin doesn't remove these hooks: ask to remove the CookiePal hooks when you want them gone. Add them?" If they agree, run `CHECK cursor-hooks install` and go on. If they decline, tell them the check can't run in Cursor without the hooks, and stop. When the user asks to remove the CookiePal hooks, run `CHECK cursor-hooks uninstall` and say which hooks file it changed.
@@ -80,7 +80,7 @@ Run `CHECK consent share` only after a clear yes. For anything else, including n
 
 ### 4. Plan
 
-Call the cookiepal server's `plan_check` tool with `url` set to `page`, and `pluginVersion` when there is one. Never send the full URL: the query string can hold tokens. Include `installId` only when it is a non-empty string. Otherwise leave it out.
+Call the cookiepal server's `plan_check` tool with `url` set to `page`, and `pluginVersion` set to `0.5.0`, this plugin's version. Do not send the `pluginVersion` that prepare returns: it is the local agent's own version, not the plugin's. Never send the full URL: the query string can hold tokens. Include `installId` only when it is a non-empty string. Otherwise leave it out.
 
 A query string cannot leak this way even if you get it wrong. The plugin's guard is a `PreToolUse` hook: it reads the call on this machine and denies it *before* anything is sent, so a refused call reaches no server. Send the `page` because it is correct, not because the alternative is dangerous, and never tell the user a token was transmitted when the guard refused the call.
 

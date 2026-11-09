@@ -16,7 +16,7 @@ CookiePal never loads the site. Nothing is crawled on CookiePal's side: the page
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/dist/check.mjs"
+COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.2.2
 ```
 
 Run each `CHECK` exactly as shown. Pass the URL only through the quoted heredoc, never on the command line, and never write JSON into a command. If any step prints `"ok": false`, tell the user its `error` in plain words and stop.

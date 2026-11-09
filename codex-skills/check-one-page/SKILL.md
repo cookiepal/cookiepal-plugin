@@ -16,10 +16,10 @@ The check never says whether a site is compliant. It says what was found and wha
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-npx -y @cookiepal-oss/agent@0.2.2
+npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.2.2
 ```
 
-**In Codex:** run every `CHECK` command outside the sandbox, by requesting escalated permissions for it with `prefix_rule` set to `["npx", "-y", "@cookiepal-oss/agent@0.2.2"]`, so one approval covers every later `CHECK`. Say why: it saves the check's files in `~/.cookiepal` and loads pages in a browser, which the sandbox blocks. If Codex rejects the request without asking the user, tell them to choose "Ask for approval" under `/permissions` and ask again, and stop. If the user declines, tell them the check can't run inside the sandbox, and stop. Never run a `CHECK cursor-hooks` command from Codex.
+**In Codex:** run every `CHECK` command outside the sandbox, by requesting escalated permissions for it with `prefix_rule` set to `["npm", "exec", "--yes", "--prefix", "/", "--@cookiepal-oss:registry=https://registry.npmjs.org/", "--", "@cookiepal-oss/agent@0.2.2"]`, so one approval covers every later `CHECK`. Say why: it saves the check's files in `~/.cookiepal` and loads pages in a browser, which the sandbox blocks. If Codex rejects the request without asking the user, tell them to choose "Ask for approval" under `/permissions` and ask again, and stop. If the user declines, tell them the check can't run inside the sandbox, and stop. Never run a `CHECK cursor-hooks` command from Codex.
 
 Run each `CHECK` exactly as shown below. Pass the URL only through the quoted heredoc, never on the command line, and never write JSON into a command. If any step prints `"ok": false`, tell the user its `error` in plain words and stop.
 
@@ -80,7 +80,7 @@ Run `CHECK consent share` only after a clear yes. For anything else, including n
 
 ### 4. Plan
 
-Call the cookiepal server's `plan_check` tool with `url` set to `page`, and `pluginVersion` when there is one. Never send the full URL: the query string can hold tokens. Include `installId` only when it is a non-empty string. Otherwise leave it out.
+Call the cookiepal server's `plan_check` tool with `url` set to `page`, and `pluginVersion` set to `0.5.0`, this plugin's version. Do not send the `pluginVersion` that prepare returns: it is the local agent's own version, not the plugin's. Never send the full URL: the query string can hold tokens. Include `installId` only when it is a non-empty string. Otherwise leave it out.
 
 A query string cannot leak this way even if you get it wrong. The plugin's guard is a `PreToolUse` hook: it reads the call on this machine and denies it *before* anything is sent, so a refused call reaches no server. Send the `page` because it is correct, not because the alternative is dangerous, and never tell the user a token was transmitted when the guard refused the call.
 

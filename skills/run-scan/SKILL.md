@@ -14,7 +14,7 @@ CookiePal never crawls the site. Nothing happens on CookiePal's side until the u
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/dist/check.mjs"
+COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.2.2
 ```
 
 Run each `CHECK` exactly as shown. If any step prints `"ok": false`, tell the user its `error` in plain words and stop. If a cookiepal tool itself fails — the server is unreachable, or it returns any other error — say so plainly and stop. Do not call it again in a loop and do not work around it.

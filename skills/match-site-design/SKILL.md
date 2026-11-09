@@ -18,7 +18,7 @@ one.
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/dist/check.mjs"
+COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.2.2
 ```
 
 Run it exactly as shown, passing the colours only through the quoted heredoc. Never work out a

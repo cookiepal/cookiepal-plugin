@@ -12,7 +12,7 @@ One tool. `check_gcm_status` judges a reading of the page's own `google_tag_data
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/dist/check.mjs"
+COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.2.2
 ```
 
 Run each `CHECK` exactly as shown. Pass the URL only through the quoted heredoc, never on the command line. If any step prints `"ok": false`, tell the user its `error` in plain words and stop. If a cookiepal tool itself fails, say so plainly and stop; do not call it again in a loop.

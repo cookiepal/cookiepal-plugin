@@ -12,7 +12,7 @@ One tool. `check_gcm_status` judges a reading of the page's own `google_tag_data
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-npx -y @cookiepal-oss/agent@0.2.2
+npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.2.2
 ```
 
 **First, in Cursor:** run `CHECK cursor-hooks status`. If it prints `"installed": true`, go on. Otherwise ask the user, in these words: "CookiePal needs to add two hooks to Cursor's hooks file (~/.cursor/hooks.json). Cursor runs them on every MCP call, to any server, and they act only on calls to CookiePal: they hand each check's plan and result between steps and refuse unsafe calls. They run a copy of CookiePal's checker kept in ~/.cookiepal/agent. Your other hooks stay as they are. Uninstalling the plugin doesn't remove these hooks: ask to remove the CookiePal hooks when you want them gone. Add them?" If they agree, run `CHECK cursor-hooks install` and go on. If they decline, tell them the check can't run in Cursor without the hooks, and stop. When the user asks to remove the CookiePal hooks, run `CHECK cursor-hooks uninstall` and say which hooks file it changed.
