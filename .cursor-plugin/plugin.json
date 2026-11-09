@@ -1,6 +1,6 @@
 {
   "name": "cookiepal",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Check any page for cookies and trackers that fire before consent, and for what its banner's accept and reject buttons actually do, from Cursor. Sign in to CookiePal when Cursor connects; a free account is enough.",
   "author": {
     "name": "CookiePal"
