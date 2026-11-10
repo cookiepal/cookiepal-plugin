@@ -52,7 +52,7 @@ CI runs the same command with `--check` and fails when a committed copy is stale
 | `.claude-plugin/`, `.mcp.json` | The plugin and marketplace manifests, and the hosted MCP server the skills call |
 | `.codex-plugin/`, `codex-skills/`, `.codex-mcp.json` | The Codex manifest, its generated skills, and its MCP server, which puts the banner and account-link tools on Codex's own approval prompt |
 | `.cursor-plugin/`, `cursor-skills/`, `.cursor-mcp.json` | The Cursor manifest, its generated skills, and its MCP server (`/mcp/account`, which makes Cursor offer sign-in) |
-| `assets/icon.png` | The icon the Codex and Cursor manifests show |
+| `assets/` | The icon the Codex and Cursor manifests show |
 | `server.json` | The hosted server's entry in the Official MCP Registry |
 
 ## Things worth knowing before you change something
