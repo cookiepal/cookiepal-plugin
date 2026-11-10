@@ -15,28 +15,38 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      CLAUDE_CODE_VERSION: 2.1.318
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Lint
-        run: pnpm lint
-      - name: Typecheck
-        run: pnpm typecheck
-      # Plugins install from git with no build step, so the bundle the skill runs is committed.
-      - name: Check dist/ and the Codex and Cursor skills match the build
+      - name: Validate the plugin and marketplace manifests
         run: |
-          pnpm build
-          # status, not diff: an uncommitted or deleted file has to fail too.
-          test -z "$(git status --porcelain -- dist/ codex-skills/ cursor-skills/)" || { git status --short -- dist/ codex-skills/ cursor-skills/; echo "::error::dist/ or the generated skills are out of date or not committed. Run pnpm build and commit them."; exit 1; }
-      - name: Validate plugin and marketplace manifests
-        run: pnpm validate
-      - name: Test
-        run: pnpm test
+          npx -y "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" plugin validate --strict .claude-plugin/plugin.json
+          npx -y "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" plugin validate --strict .claude-plugin/marketplace.json
+          npx -y "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" plugin validate . --profile directory
+      - name: Check the manifests agree and Codex asks before banner and account-link calls
+        run: |
+          versions=$(jq -r .version .claude-plugin/plugin.json .codex-plugin/plugin.json .cursor-plugin/plugin.json | sort -u)
+          test "$(printf '%s\n' "$versions" | wc -l)" -eq 1 || { echo "$versions"; echo "::error::The Claude, Codex and Cursor manifests must have the same version."; exit 1; }
+          for tool in connect_account set_banner_mode customise_banner regenerate_banner; do
+            jq -e --arg tool "$tool" '.mcpServers.cookiepal.tools[$tool].approval_mode == "prompt"' .codex-mcp.json > /dev/null \
+              || { echo "::error::.codex-mcp.json must set approval_mode \"prompt\" for $tool."; exit 1; }
+          done
+      # The Codex and Cursor skills are generated from skills/ by the agent the skills pin, so run that same version.
+      - name: Check the Codex and Cursor skills match skills/
+        run: |
+          version=$(grep -oE '@cookiepal-oss/agent@[0-9]+[.][0-9]+[.][0-9]+' skills/check-one-page/SKILL.md | head -n 1 | cut -d @ -f 3)
+          test -n "$version" || { echo "::error::No pinned @cookiepal-oss/agent version in skills/check-one-page/SKILL.md."; exit 1; }
+          npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- "@cookiepal-oss/agent@$version" skills . --check \
+            || { echo "::error::codex-skills/ or cursor-skills/ is out of date. Run the agent's skills command and commit the result."; exit 1; }
+      # The Claude plugin directory refuses any other file type from an unverified organisation.
+      - name: Check the repository holds only text and images
+        run: |
+          other=$(git ls-files | grep -viE '[.](md|txt|json|ya?ml|png|jpe?g|gif|webp|ico)$' | grep -vxE 'LICENSE|[.]gitignore' || true)
+          test -z "$other" || { echo "$other"; echo "::error::Only Markdown, text, JSON, YAML and PNG, JPEG, GIF, WebP or ICO files may be committed."; exit 1; }
 
   secrets:
     runs-on: ubuntu-latest
