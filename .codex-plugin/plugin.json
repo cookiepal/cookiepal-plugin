@@ -1,6 +1,6 @@
 {
   "name": "cookiepal",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Check any page for cookies and trackers that fire before consent, and for what its banner's accept and reject buttons actually do, from Codex. No account needed to check; connect one to use CookiePal on your own site.",
   "author": {
     "name": "CookiePal",
@@ -17,6 +17,6 @@
     "shortDescription": "Check pages for cookies set before consent",
     "developerName": "CookiePal",
     "websiteURL": "https://cookiepal.io",
-    "logo": "./assets/icon.svg"
+    "logo": "./assets/icon.png"
   }
 }
