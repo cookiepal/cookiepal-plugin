@@ -9,7 +9,10 @@ argument-hint: '[domain]'
 
 This reads files and changes none of them. The one write is a `customise_banner` call, and it
 happens only after the user has seen the proposed values and said yes to them. **Never call
-`customise_banner` before that yes, and never with values other than the ones shown.**
+`customise_banner` before that yes, and never with values other than the ones shown.** It changes
+the live banner straight away, so this skill's own question in step 6 is what guards it;
+Claude Code may ask the user to approve the call once more, unless they have allowed that tool.
+This skill never calls `set_banner_mode` or `regenerate_banner`.
 
 Saving needs a connected account, because `customise_banner` does. If the call says sign-in is
 needed, follow the `connect-account` skill and come back. Everything up to the save works without
@@ -18,10 +21,12 @@ one.
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/dist/check.mjs"
+COOKIEPAL_DATA_DIR="${CLAUDE_PLUGIN_DATA}" npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.3.1
 ```
 
-Run it exactly as shown, passing the colours only through the quoted heredoc. Never work out a
+It runs CookiePal's open-source local agent at that exact version, from the public npm registry.
+Run it exactly as shown, never changing the version, the registry or the directory it runs from,
+and pass the colours only through the quoted heredoc. Never work out a
 contrast ratio, or convert a colour to hex, yourself: `CHECK design` does both, and its numbers are
 the only ones to show.
 
@@ -171,7 +176,8 @@ Call the cookiepal server's `customise_banner` tool with:
 - `positions` only when step 4 proposed one: the `bannerTypePosition` step 6 showed, and
   `bannerFabPosition` only when step 4 proposed one.
 
-Send nothing else: no `logo` and no `texts`. This skill changes colours and position only.
+Send nothing else: no `logo` and no `texts`. This skill changes colours and position only. If the
+user declines the approval prompt for this call, nothing is saved: say so and stop.
 
 Report the tool's `message` as it is: whether a rebuild was queued, or skipped because the domain
 reached its page-view limit. Never say the banner is compliant on the strength of its colours; that

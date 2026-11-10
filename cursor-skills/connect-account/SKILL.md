@@ -13,10 +13,12 @@ Sign-in happens in the user's browser, never here. Never ask for, accept or repe
 `CHECK` below means this command, which prints one JSON object:
 
 ```
-npx -y @cookiepal-oss/agent@0.2.2
+npm exec --yes --prefix / --@cookiepal-oss:registry=https://registry.npmjs.org/ -- @cookiepal-oss/agent@0.3.1
 ```
 
-**First, in Cursor:** run `CHECK cursor-hooks status`. If it prints `"installed": true`, go on. Otherwise ask the user, in these words: "CookiePal needs to add two hooks to Cursor's hooks file (~/.cursor/hooks.json). Cursor runs them on every MCP call, to any server, and they act only on calls to CookiePal: they hand each check's plan and result between steps and refuse unsafe calls. They run a copy of CookiePal's checker kept in ~/.cookiepal/agent. Your other hooks stay as they are. Uninstalling the plugin doesn't remove these hooks: ask to remove the CookiePal hooks when you want them gone. Add them?" If they agree, run `CHECK cursor-hooks install` and go on. If they decline, tell them the check can't run in Cursor without the hooks, and stop. When the user asks to remove the CookiePal hooks, run `CHECK cursor-hooks uninstall` and say which hooks file it changed.
+**Old CookiePal hooks in Cursor:** nothing here needs hooks. Earlier versions of CookiePal added two hooks to Cursor's hooks file (~/.cursor/hooks.json). When the user asks to remove the CookiePal hooks, run `CHECK cursor-hooks uninstall` and say which hooks file it changed.
+
+It runs CookiePal's open-source local agent at that exact version, from the public npm registry. Run each `CHECK` exactly as shown: never change the version, the registry or the directory it runs from.
 
 ## Steps
 
@@ -30,13 +32,15 @@ If there is an `installId`, the user agreed to share it to count unique installs
 
 Options: **No, don't link it** · **Yes, link it**
 
-Record the answer: `CHECK consent link yes` after a clear yes, `CHECK consent link no` for anything else, including no answer. Never record a yes the user did not give. A hook on `connect_account` refuses the install ID unless it comes with the answer recorded here, and for a yes Cursor may ask the user to confirm before the call goes out. If that call is denied, whether by the user or by the permission mode, do not treat it as a no: call `connect_account` again without `installId`, which leaves any link as it was, and tell the user the install ID could not be linked this time.
+Record the answer: `CHECK consent link yes` after a clear yes, `CHECK consent link no` for anything else, including no answer. Never record a yes the user did not give. It returns `link`, with the `installId` and `linkInstall` to send in step 2: send those two values exactly as returned, and never an install ID or a `linkInstall` from anywhere else. Asking here is what stands between the install ID and the account, so never skip it, and never send the ID before this step has recorded an answer.
+
+Cursor may then ask the user to approve the `connect_account` call itself, unless they have allowed that tool. If that call is denied, whether by the user or by the permission mode, do not treat it as a no: call `connect_account` again without `installId`, which leaves any link as it was, and tell the user the install ID could not be linked this time.
 
 ### 2. Connect
 
-Call the cookiepal server's `connect_account` tool. With an `installId` from step 1, send it with `linkInstall` set to the recorded answer: `true` for yes, `false` for no. A no also removes a link made on an earlier connect. Without an `installId`, send neither.
+Call the cookiepal server's `connect_account` tool. With a `link` from step 1, send its `installId`, and `linkInstall` set to its `linkInstall`: `true` for yes, `false` for no. A no also removes a link made on an earlier connect. Without an `installId`, send neither.
 
-If the client is not signed in, the call opens CookiePal's connect page in the browser instead of answering. Tell the user what to expect there: if they are already signed in to CookiePal in that browser, they press **Connect as** their email and that is all. Otherwise they sign in (or continue with Google) or create a free account, which open in a new tab, then come back to the connect page and press Connect. Cursor is connected when they do. Wait for the user to say they have pressed Connect, then call `connect_account` once more with the same `installId` and `linkInstall` as before (the answer stands for half an hour; if the hook refuses the call because it has run out, ask the link question again and record the new answer, never drop the `installId` to get past it). That second answer is the one step 3 reports.
+If the client is not signed in, the call opens CookiePal's connect page in the browser instead of answering. Tell the user what to expect there: if they are already signed in to CookiePal in that browser, they press **Connect as** their email and that is all. Otherwise they sign in (or continue with Google) or create a free account, which open in a new tab, then come back to the connect page and press Connect. Cursor is connected when they do. Wait for the user to say they have pressed Connect, then call `connect_account` once more with the same `installId` and `linkInstall` as before. That second answer is the one step 3 reports.
 
 If the call fails because sign-in is needed and no browser opened, tell the user to open Cursor's settings, choose **MCP**, sign in to **cookiepal**, and then ask for the CookiePal connect-account skill again. Do not retry in a loop.
 

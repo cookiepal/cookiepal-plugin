@@ -1,8 +1,7 @@
 # Stack detection rules
 
-Read by `detect-stack` and `install-banner` at runtime, and parsed verbatim by
-`tests/stacks.test.ts`: this is the one copy of the rules, not a description of a copy that lives
-somewhere else.
+Read by `detect-stack` and `install-banner` at runtime: this is the one copy of the rules, not a
+description of a copy that lives somewhere else.
 
 ## Table grammar
 
@@ -243,9 +242,9 @@ instead — the same rule, written for the other place it is read from:
 /\/client_data\/[^/\s"'`]+\/script\.js/
 ```
 
-Both spellings share the literal fragment `/client_data/`. `tests/stacks.test.ts` asserts that this
-file, `src/install.ts` and the fixtures all still agree on it, so changing the CDN path in one place
-fails the suite rather than silently leaving three stale copies.
+Both spellings share the literal fragment `/client_data/`. The agent's `skills --check`, which CI
+runs, checks that the CDN path here still matches the agent's own install-tag finder, so changing it
+in one place fails CI rather than silently leaving a stale copy.
 
 - **A live tag whose `src` is the one `get_install_snippet` returned** → already installed. Change
   nothing. Name the file and the line it is on, and point the user at
