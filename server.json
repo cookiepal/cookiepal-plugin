@@ -3,8 +3,8 @@
   "name": "io.cookiepal/cookiepal",
   "title": "CookiePal",
   "description": "Manage your CookiePal cookie banner: domains, the banner tag and style, and cookie scan reports.",
-  "version": "1.0.0",
-  "websiteUrl": "https://cookiepal.io/ai",
+  "version": "1.0.1",
+  "websiteUrl": "https://cookiepal.io/ai?utm_source=directory&utm_medium=referral&utm_campaign=mcp-registry&utm_id=mcp-registry",
   "icons": [
     {
       "src": "https://cookiepal.io/images/favicon.svg",
