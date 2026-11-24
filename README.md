@@ -66,7 +66,7 @@ Most banners are not honest about **reject**. A page sets its analytics and adve
 
 You can find that out with devtools, a clean browser profile and twenty minutes per page. Or you can ask, from the editor you are already in, and get an answer in one line.
 
-CookiePal loads one page in a throwaway browser profile on your machine, records what was set before anyone agreed to anything, then presses the banner's accept and reject buttons and tells you what each one actually did. Cheap, easy, fast, like the rest of [CookiePal](https://cookiepal.io).
+CookiePal loads one page in a throwaway browser profile on your machine, records what was set before anyone agreed to anything, then presses the banner's accept and reject buttons and tells you what each one actually did. Cheap, easy, fast, like the rest of [CookiePal](https://cookiepal.io/ai?utm_source=directory&utm_medium=referral&utm_campaign=github-plugin&utm_id=gh-cookiepal-plugin).
 
 ## 👋 Getting started
 
