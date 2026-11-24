@@ -6,7 +6,7 @@
     "name": "CookiePal",
     "url": "https://cookiepal.io"
   },
-  "homepage": "https://cookiepal.io",
+  "homepage": "https://cookiepal.io/ai?utm_source=directory&utm_medium=referral&utm_campaign=chatgpt-apps&utm_id=mcp-chatgpt-apps",
   "repository": "https://github.com/cookiepal/cookiepal-plugin",
   "license": "MIT",
   "keywords": ["cookies", "consent", "gdpr", "ccpa", "lgpd", "law-25", "privacy", "cookie-banner"],
@@ -16,7 +16,7 @@
     "displayName": "CookiePal",
     "shortDescription": "Check pages for cookies set before consent",
     "developerName": "CookiePal",
-    "websiteURL": "https://cookiepal.io",
+    "websiteURL": "https://cookiepal.io/ai?utm_source=directory&utm_medium=referral&utm_campaign=chatgpt-apps&utm_id=mcp-chatgpt-apps",
     "logo": "./assets/icon.png"
   }
 }
